@@ -48,16 +48,57 @@ let RoomsGateway = class RoomsGateway {
             client.emit('error', { message: 'Room not found' });
             return;
         }
+        if (result.error === 'NAME_TAKEN') {
+            client.emit('error', { message: 'Tên này đã có người sử dụng trong phòng' });
+            return;
+        }
         const { room, user } = result;
         client.join(room.roomId);
         const adjustedRoom = this.roomsService.getRoom(room.roomId);
         client.emit('room:joined', { room: this.mapRoomForClient(adjustedRoom), user });
         this.broadcastRoomUpdate(room.roomId);
     }
+    handleLeaveRoom(client) {
+        const result = this.roomsService.leaveRoom(client.id);
+        if (result) {
+            const { roomId } = result;
+            client.leave(roomId);
+            this.broadcastRoomUpdate(roomId);
+            client.emit('room:left');
+            console.log(`Client ${client.id} manually left room ${roomId}`);
+        }
+    }
     async handleAddTrack(data) {
         const track = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId);
         if (track) {
             this.broadcastRoomUpdate(data.roomId);
+        }
+    }
+    handleRemoveTrack(data, client) {
+        const success = this.roomsService.removeTrack(data.roomId, data.trackId, data.userId);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Unauthorized or track not found' });
+        }
+    }
+    handleReorderQueue(data, client) {
+        const success = this.roomsService.reorderQueue(data.roomId, data.userId, data.fromIndex, data.toIndex);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Unauthorized or invalid indices' });
+        }
+    }
+    handleTransferAdmin(data, client) {
+        const success = this.roomsService.transferAdmin(data.roomId, data.currentAdminId, data.newAdminId);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Failed to transfer admin rights' });
         }
     }
     handlePlaybackSync(data, client) {
@@ -108,12 +149,43 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleJoinRoom", null);
 __decorate([
+    (0, websockets_1.SubscribeMessage)('room:leave'),
+    __param(0, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleLeaveRoom", null);
+__decorate([
     (0, websockets_1.SubscribeMessage)('queue:add'),
     __param(0, (0, websockets_1.MessageBody)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], RoomsGateway.prototype, "handleAddTrack", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('queue:remove'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleRemoveTrack", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('queue:reorder'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleReorderQueue", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('room:transfer-admin'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleTransferAdmin", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('playback:sync'),
     __param(0, (0, websockets_1.MessageBody)()),

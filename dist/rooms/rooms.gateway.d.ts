@@ -14,11 +14,28 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         roomId: string;
         name: string;
     }, client: Socket): void;
+    handleLeaveRoom(client: Socket): void;
     handleAddTrack(data: {
         roomId: string;
         youtubeUrl: string;
         userId: string;
     }): Promise<void>;
+    handleRemoveTrack(data: {
+        roomId: string;
+        trackId: string;
+        userId: string;
+    }, client: Socket): void;
+    handleReorderQueue(data: {
+        roomId: string;
+        userId: string;
+        fromIndex: number;
+        toIndex: number;
+    }, client: Socket): void;
+    handleTransferAdmin(data: {
+        roomId: string;
+        currentAdminId: string;
+        newAdminId: string;
+    }, client: Socket): void;
     handlePlaybackSync(data: {
         roomId: string;
         userId: string;

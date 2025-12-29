@@ -7,10 +7,11 @@ export declare class RoomsService {
     joinRoom(roomId: string, name: string, socketId: string): {
         room: Room;
         user: User;
+        error?: string;
     } | null;
     leaveRoom(socketId: string): {
         roomId: string;
-        room: Room;
+        room: Room | null;
     } | null;
     getRoom(roomId: string): Room | undefined;
     fetchYoutubeMetadata(url: string): Promise<{
@@ -21,5 +22,7 @@ export declare class RoomsService {
     addTrack(roomId: string, youtubeUrl: string, userId: string): Promise<Track | null>;
     removeTrack(roomId: string, trackId: string, userId: string): boolean;
     updatePlayback(roomId: string, userId: string, state: Partial<PlaybackState>): boolean;
+    reorderQueue(roomId: string, userId: string, fromIndex: number, toIndex: number): boolean;
+    transferAdmin(roomId: string, currentAdminId: string, newAdminId: string): boolean;
     nextTrack(roomId: string): Track | null;
 }

@@ -62,6 +62,11 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    if (result.error === 'NAME_TAKEN') {
+      client.emit('error', { message: 'Tên này đã có người sử dụng trong phòng' });
+      return;
+    }
+
     const { room, user } = result;
     client.join(room.roomId);
     
@@ -71,6 +76,18 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.broadcastRoomUpdate(room.roomId);
   }
 
+  @SubscribeMessage('room:leave')
+  handleLeaveRoom(@ConnectedSocket() client: Socket) {
+    const result = this.roomsService.leaveRoom(client.id);
+    if (result) {
+      const { roomId } = result;
+      client.leave(roomId);
+      this.broadcastRoomUpdate(roomId);
+      client.emit('room:left');
+      console.log(`Client ${client.id} manually left room ${roomId}`);
+    }
+  }
+
   @SubscribeMessage('queue:add')
   async handleAddTrack(
     @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string },
@@ -78,6 +95,56 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const track = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId);
     if (track) {
       this.broadcastRoomUpdate(data.roomId);
+    }
+  }
+
+  @SubscribeMessage('queue:remove')
+  handleRemoveTrack(
+    @MessageBody() data: { roomId: string; trackId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.removeTrack(data.roomId, data.trackId, data.userId);
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Unauthorized or track not found' });
+    }
+  }
+
+  @SubscribeMessage('queue:reorder')
+  handleReorderQueue(
+    @MessageBody() data: { roomId: string; userId: string; fromIndex: number; toIndex: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.reorderQueue(
+      data.roomId,
+      data.userId,
+      data.fromIndex,
+      data.toIndex,
+    );
+
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Unauthorized or invalid indices' });
+    }
+  }
+
+  @SubscribeMessage('room:transfer-admin')
+  handleTransferAdmin(
+    @MessageBody() data: { roomId: string; currentAdminId: string; newAdminId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.transferAdmin(
+      data.roomId,
+      data.currentAdminId,
+      data.newAdminId,
+    );
+
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Failed to transfer admin rights' });
     }
   }
 

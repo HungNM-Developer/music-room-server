@@ -51,6 +51,10 @@ let RoomsService = class RoomsService {
         const room = this.rooms.get(roomId);
         if (!room)
             return null;
+        const nameExists = room.users.some((u) => u.name.toLowerCase() === name.toLowerCase());
+        if (nameExists) {
+            return { room: null, user: null, error: 'NAME_TAKEN' };
+        }
         const user = {
             userId: (0, uuid_1.v4)(),
             socketId,
@@ -66,13 +70,13 @@ let RoomsService = class RoomsService {
             const userIndex = room.users.findIndex((u) => u.socketId === socketId);
             if (userIndex !== -1) {
                 const [user] = room.users.splice(userIndex, 1);
-                if (user.role === 'admin' && room.users.length > 0) {
+                if (room.users.length === 0) {
+                    this.rooms.delete(roomId);
+                    return { roomId, room: null };
+                }
+                if (user.role === 'admin') {
                     room.users[0].role = 'admin';
                     room.adminId = room.users[0].userId;
-                }
-                else if (room.users.length === 0) {
-                    this.rooms.delete(roomId);
-                    return { roomId, room: room };
                 }
                 return { roomId, room };
             }
@@ -138,11 +142,18 @@ let RoomsService = class RoomsService {
         const room = this.rooms.get(roomId);
         if (!room)
             return false;
-        const user = room.users.find(u => u.userId === userId);
-        if (!user || user.role !== 'admin')
+        const user = room.users.find((u) => u.userId === userId);
+        if (!user)
             return false;
-        room.queue = room.queue.filter(t => t.trackId !== trackId);
-        return true;
+        const trackIndex = room.queue.findIndex((t) => t.trackId === trackId);
+        if (trackIndex === -1)
+            return false;
+        const track = room.queue[trackIndex];
+        if (user.role === 'admin' || track.addedBy === userId) {
+            room.queue.splice(trackIndex, 1);
+            return true;
+        }
+        return false;
     }
     updatePlayback(roomId, userId, state) {
         const room = this.rooms.get(roomId);
@@ -156,6 +167,36 @@ let RoomsService = class RoomsService {
             ...state,
             lastUpdated: Date.now(),
         };
+        return true;
+    }
+    reorderQueue(roomId, userId, fromIndex, toIndex) {
+        const room = this.rooms.get(roomId);
+        if (!room)
+            return false;
+        const user = room.users.find((u) => u.userId === userId);
+        if (!user || user.role !== 'admin')
+            return false;
+        if (fromIndex < 0 || fromIndex >= room.queue.length ||
+            toIndex < 0 || toIndex >= room.queue.length) {
+            return false;
+        }
+        const [movedTrack] = room.queue.splice(fromIndex, 1);
+        room.queue.splice(toIndex, 0, movedTrack);
+        return true;
+    }
+    transferAdmin(roomId, currentAdminId, newAdminId) {
+        const room = this.rooms.get(roomId);
+        if (!room)
+            return false;
+        if (room.adminId !== currentAdminId)
+            return false;
+        const currentAdmin = room.users.find((u) => u.userId === currentAdminId);
+        const targetUser = room.users.find((u) => u.userId === newAdminId);
+        if (!currentAdmin || !targetUser)
+            return false;
+        currentAdmin.role = 'user';
+        targetUser.role = 'admin';
+        room.adminId = newAdminId;
         return true;
     }
     nextTrack(roomId) {

@@ -44,9 +44,17 @@ export class RoomsService {
     return room;
   }
 
-  joinRoom(roomId: string, name: string, socketId: string): { room: Room; user: User } | null {
+  joinRoom(roomId: string, name: string, socketId: string): { room: Room; user: User; error?: string } | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
+
+    // Check if name already exists in this room
+    const nameExists = room.users.some(
+      (u) => u.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (nameExists) {
+      return { room: null as any, user: null as any, error: 'NAME_TAKEN' };
+    }
 
     const user: User = {
       userId: uuidv4(),
@@ -60,19 +68,22 @@ export class RoomsService {
     return { room, user };
   }
 
-  leaveRoom(socketId: string): { roomId: string; room: Room } | null {
+  leaveRoom(socketId: string): { roomId: string; room: Room | null } | null {
     for (const [roomId, room] of this.rooms.entries()) {
       const userIndex = room.users.findIndex((u) => u.socketId === socketId);
       if (userIndex !== -1) {
         const [user] = room.users.splice(userIndex, 1);
         
-        // If admin leaves, assign new admin or delete room
-        if (user.role === 'admin' && room.users.length > 0) {
+        // Scenario 1: Room becomes empty
+        if (room.users.length === 0) {
+          this.rooms.delete(roomId);
+          return { roomId, room: null }; // Room is gone
+        }
+
+        // Scenario 2: Admin leaves but others are still there
+        if (user.role === 'admin') {
           room.users[0].role = 'admin';
           room.adminId = room.users[0].userId;
-        } else if (room.users.length === 0) {
-          this.rooms.delete(roomId);
-          return { roomId, room: room as any };
         }
         
         return { roomId, room };
@@ -146,11 +157,21 @@ export class RoomsService {
     const room = this.rooms.get(roomId);
     if (!room) return false;
 
-    const user = room.users.find(u => u.userId === userId);
-    if (!user || user.role !== 'admin') return false;
+    const user = room.users.find((u) => u.userId === userId);
+    if (!user) return false;
 
-    room.queue = room.queue.filter(t => t.trackId !== trackId);
-    return true;
+    const trackIndex = room.queue.findIndex((t) => t.trackId === trackId);
+    if (trackIndex === -1) return false;
+
+    const track = room.queue[trackIndex];
+
+    // Admin can delete any, user can delete their own
+    if (user.role === 'admin' || track.addedBy === userId) {
+      room.queue.splice(trackIndex, 1);
+      return true;
+    }
+
+    return false;
   }
 
   updatePlayback(roomId: string, userId: string, state: Partial<PlaybackState>): boolean {
@@ -165,6 +186,46 @@ export class RoomsService {
       ...state,
       lastUpdated: Date.now(),
     };
+
+    return true;
+  }
+
+  reorderQueue(roomId: string, userId: string, fromIndex: number, toIndex: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const user = room.users.find((u) => u.userId === userId);
+    if (!user || user.role !== 'admin') return false;
+
+    if (
+      fromIndex < 0 || fromIndex >= room.queue.length ||
+      toIndex < 0 || toIndex >= room.queue.length
+    ) {
+      return false;
+    }
+
+    const [movedTrack] = room.queue.splice(fromIndex, 1);
+    room.queue.splice(toIndex, 0, movedTrack);
+
+    return true;
+  }
+
+  transferAdmin(roomId: string, currentAdminId: string, newAdminId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // Verify current requester is the admin
+    if (room.adminId !== currentAdminId) return false;
+
+    const currentAdmin = room.users.find((u) => u.userId === currentAdminId);
+    const targetUser = room.users.find((u) => u.userId === newAdminId);
+
+    if (!currentAdmin || !targetUser) return false;
+
+    // Swap roles
+    currentAdmin.role = 'user';
+    targetUser.role = 'admin';
+    room.adminId = newAdminId;
 
     return true;
   }
