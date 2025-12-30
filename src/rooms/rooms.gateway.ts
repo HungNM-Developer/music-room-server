@@ -15,6 +15,8 @@ import { Track } from './types';
   cors: {
     origin: '*',
   },
+  pingTimeout: 60000,
+  pingInterval: 25000,
 })
 export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -34,7 +36,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.broadcastRoomUpdate(roomId);
       }
     }
-    console.log(`Client disconnected: ${client.id}`);
+    console.log(`[Socket] Client disconnected: ${client.id}`);
   }
 
   @SubscribeMessage('room:create')
@@ -145,6 +147,24 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.broadcastRoomUpdate(data.roomId);
     } else {
       client.emit('error', { message: 'Failed to transfer admin rights' });
+    }
+  }
+
+  @SubscribeMessage('room:share-admin')
+  handleShareAdmin(
+    @MessageBody() data: { roomId: string; requesterId: string; targetUserId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.shareAdmin(
+      data.roomId,
+      data.requesterId,
+      data.targetUserId,
+    );
+
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Failed to share admin rights' });
     }
   }
 

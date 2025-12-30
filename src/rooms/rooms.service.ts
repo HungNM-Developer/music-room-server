@@ -209,7 +209,6 @@ export class RoomsService {
 
     return true;
   }
-
   transferAdmin(roomId: string, currentAdminId: string, newAdminId: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
@@ -227,6 +226,21 @@ export class RoomsService {
     targetUser.role = 'admin';
     room.adminId = newAdminId;
 
+    return true;
+  }
+
+  shareAdmin(roomId: string, requesterId: string, targetUserId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // Only existing admins can share admin rights
+    const requester = room.users.find((u) => u.userId === requesterId);
+    if (!requester || requester.role !== 'admin') return false;
+
+    const targetUser = room.users.find((u) => u.userId === targetUserId);
+    if (!targetUser) return false;
+
+    targetUser.role = 'admin';
     return true;
   }
 
