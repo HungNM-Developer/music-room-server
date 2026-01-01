@@ -1,10 +1,19 @@
 import { Room, User, Track, PlaybackState } from './types';
 export declare class RoomsService {
     private rooms;
-    private timers;
+    private inactivityTimers;
+    private trackEndTimers;
     private onTrackEndCallback;
-    private colors;
+    private onRoomClosedCallback;
+    private COLORS;
     setTrackEndCallback(callback: (roomId: string) => void): void;
+    setRoomClosedCallback(callback: (roomId: string) => void): void;
+    private resetInactivityTimer;
+    private stopInactivityTimer;
+    private closeRoom;
+    private clearTrackTimer;
+    private scheduleTrackEnd;
+    private triggerTrackEnd;
     private getRandomColor;
     createRoom(adminName: string, socketId: string): Room;
     joinRoom(roomId: string, name: string, socketId: string): {
@@ -16,7 +25,8 @@ export declare class RoomsService {
         roomId: string;
         room: Room | null;
     } | null;
-    getRoom(roomId: string): Room | undefined;
+    getRoom(roomId: string): Room | null;
+    private getAdjustedRoom;
     fetchYoutubeMetadata(url: string): Promise<{
         title: string;
         thumbnail: string;
@@ -28,8 +38,7 @@ export declare class RoomsService {
     }>;
     removeTrack(roomId: string, trackId: string, userId: string): boolean;
     updatePlayback(roomId: string, userId: string, state: Partial<PlaybackState>): boolean;
-    private startTrackTimer;
-    private stopTrackTimer;
+    syncPlayback(roomId: string, userId: string, isPlaying: boolean, currentTime: number): boolean;
     reorderQueue(roomId: string, userId: string, fromIndex: number, toIndex: number): boolean;
     transferAdmin(roomId: string, currentAdminId: string, newAdminId: string): boolean;
     setControlPermission(roomId: string, requesterId: string, targetUserId: string, canControl: boolean): boolean;

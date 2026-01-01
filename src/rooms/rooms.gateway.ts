@@ -28,6 +28,11 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.roomsService.nextTrack(roomId);
       this.broadcastRoomUpdate(roomId);
     });
+
+    this.roomsService.setRoomClosedCallback((roomId) => {
+      this.server.to(roomId).emit('error', { message: 'Phòng đã bị đóng do không hoạt động trong 1 giờ.' });
+      this.server.to(roomId).emit('room:closed');
+    });
   }
 
   handleConnection(client: Socket) {

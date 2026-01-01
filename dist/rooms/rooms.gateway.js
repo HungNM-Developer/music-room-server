@@ -26,6 +26,10 @@ let RoomsGateway = class RoomsGateway {
             this.roomsService.nextTrack(roomId);
             this.broadcastRoomUpdate(roomId);
         });
+        this.roomsService.setRoomClosedCallback((roomId) => {
+            this.server.to(roomId).emit('error', { message: 'Phòng đã bị đóng do không hoạt động trong 1 giờ.' });
+            this.server.to(roomId).emit('room:closed');
+        });
     }
     handleConnection(client) {
         console.log(`Client connected: ${client.id}`);

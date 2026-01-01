@@ -6,10 +6,12 @@ import axios from 'axios';
 @Injectable()
 export class RoomsService {
   private rooms: Map<string, Room> = new Map();
-  private timers: Map<string, NodeJS.Timeout> = new Map();
+  private inactivityTimers: Map<string, NodeJS.Timeout> = new Map();
+  private trackEndTimers: Map<string, NodeJS.Timeout> = new Map();
   private onTrackEndCallback: (roomId: string) => void;
+  private onRoomClosedCallback: (roomId: string) => void;
 
-  private colors = [
+  private COLORS = [
     '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3', 
     '#FFC300', '#DAF7A6', '#C70039', '#900C3F', '#581845'
   ];
@@ -18,8 +20,75 @@ export class RoomsService {
     this.onTrackEndCallback = callback;
   }
 
+  setRoomClosedCallback(callback: (roomId: string) => void) {
+    this.onRoomClosedCallback = callback;
+  }
+
+  private resetInactivityTimer(roomId: string) {
+    this.stopInactivityTimer(roomId);
+    
+    // Set timer for 1 hour (3600000 ms)
+    const timer = setTimeout(() => {
+      console.log(`[Auto-Close] Room ${roomId} closed due to 1 hour of inactivity.`);
+      this.closeRoom(roomId);
+    }, 3600000); 
+
+    this.inactivityTimers.set(roomId, timer);
+  }
+
+  private stopInactivityTimer(roomId: string) {
+    const timer = this.inactivityTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.inactivityTimers.delete(roomId);
+    }
+  }
+
+  private closeRoom(roomId: string) {
+    this.clearTrackTimer(roomId);
+    this.stopInactivityTimer(roomId);
+    this.rooms.delete(roomId);
+    if (this.onRoomClosedCallback) {
+      this.onRoomClosedCallback(roomId);
+    }
+  }
+
+  private clearTrackTimer(roomId: string) {
+    const timer = this.trackEndTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.trackEndTimers.delete(roomId);
+    }
+  }
+
+  private scheduleTrackEnd(roomId: string) {
+    this.clearTrackTimer(roomId);
+    const room = this.rooms.get(roomId);
+    if (!room || !room.currentTrack || !room.playbackState.isPlaying) return;
+
+    const remainingSeconds = (room.currentTrack.duration || 0) - room.playbackState.currentTime;
+    if (remainingSeconds <= 0 && room.currentTrack.duration > 0) {
+      this.triggerTrackEnd(roomId);
+      return;
+    }
+
+    // Set a one-shot timer for the exact end of the track
+    const timer = setTimeout(() => {
+      this.triggerTrackEnd(roomId);
+    }, Math.max(0, remainingSeconds * 1000));
+
+    this.trackEndTimers.set(roomId, timer);
+  }
+
+  private triggerTrackEnd(roomId: string) {
+    this.nextTrack(roomId);
+    if (this.onTrackEndCallback) {
+      this.onTrackEndCallback(roomId);
+    }
+  }
+
   private getRandomColor() {
-    return this.colors[Math.floor(Math.random() * this.colors.length)];
+    return this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
   }
 
   createRoom(adminName: string, socketId: string): Room {
@@ -50,6 +119,7 @@ export class RoomsService {
     };
 
     this.rooms.set(roomId, room);
+    this.resetInactivityTimer(roomId);
     return room;
   }
 
@@ -76,6 +146,7 @@ export class RoomsService {
     };
 
     room.users.push(user);
+    this.resetInactivityTimer(roomId);
     return { room, user };
   }
 
@@ -87,7 +158,7 @@ export class RoomsService {
         
         // Scenario 1: Room becomes empty
         if (room.users.length === 0) {
-          this.stopTrackTimer(roomId);
+          this.clearTrackTimer(roomId);
           this.rooms.delete(roomId);
           return { roomId, room: null }; // Room is gone
         }
@@ -98,26 +169,47 @@ export class RoomsService {
           room.adminId = room.users[0].userId;
         }
         
+        this.resetInactivityTimer(roomId);
         return { roomId, room };
       }
     }
     return null;
   }
 
-  getRoom(roomId: string): Room | undefined {
+  getRoom(roomId: string): Room | null {
     const room = this.rooms.get(roomId);
-    if (!room) return undefined;
+    if (!room) return null;
+    return this.getAdjustedRoom(room);
+  }
 
-    // Return a clone with adjusted time
-    const adjustedRoom = { ...room };
-    if (room.playbackState.isPlaying) {
-      const elapsed = (Date.now() - room.playbackState.lastUpdated) / 1000;
-      adjustedRoom.playbackState = {
-        ...room.playbackState,
-        currentTime: room.playbackState.currentTime + elapsed,
+  // Calculate high-precision time without intervals
+  private getAdjustedRoom(room: Room): Room {
+    if (!room.currentTrack || !room.playbackState.isPlaying) {
+      return room;
+    }
+
+    const now = Date.now();
+    const elapsed = (now - room.playbackState.lastUpdated) / 1000;
+    const calculatedTime = room.playbackState.currentTime + elapsed;
+
+    // If track ended naturally
+    if (calculatedTime >= (room.currentTrack.duration || Infinity)) {
+      // We don't call nextTrack here to avoid side effects during a "get"
+      // But we cap the time
+      return {
+        ...room,
+        playbackState: { ...room.playbackState, currentTime: room.currentTrack.duration }
       };
     }
-    return adjustedRoom;
+
+    return {
+      ...room,
+      playbackState: { 
+        ...room.playbackState, 
+        currentTime: calculatedTime,
+        lastUpdated: now 
+      }
+    };
   }
 
   async fetchYoutubeMetadata(url: string): Promise<{ title: string; thumbnail: string; duration: number }> {
@@ -167,9 +259,11 @@ export class RoomsService {
       room.playbackState.isPlaying = true;
       room.playbackState.lastUpdated = Date.now();
       room.playbackState.currentTime = 0;
-      this.startTrackTimer(roomId);
+      this.stopInactivityTimer(roomId); 
+      this.scheduleTrackEnd(roomId);
     } else {
       room.queue.push(newTrack);
+      this.resetInactivityTimer(roomId); // Activity detected
     }
 
     return { track: newTrack };
@@ -190,6 +284,7 @@ export class RoomsService {
     // Admin can delete any, user can delete their own
     if (user.role === 'admin' || track.addedBy === userId) {
       room.queue.splice(trackIndex, 1);
+      this.resetInactivityTimer(roomId);
       return true;
     }
 
@@ -212,53 +307,31 @@ export class RoomsService {
 
     // Update timer based on new state
     if (room.playbackState.isPlaying) {
-      this.startTrackTimer(roomId);
+      this.stopInactivityTimer(roomId);
     } else {
-      this.stopTrackTimer(roomId);
+      this.resetInactivityTimer(roomId); // Start counting down inactivity when paused
     }
 
     return true;
   }
 
-  private startTrackTimer(roomId: string) {
-    this.stopTrackTimer(roomId); // Clear previous timer
-
+  syncPlayback(roomId: string, userId: string, isPlaying: boolean, currentTime: number) {
     const room = this.rooms.get(roomId);
-    if (!room || !room.currentTrack || !room.playbackState.isPlaying) return;
+    if (!room) return false;
 
-    // Use getRoom to get adjusted currentTime (considering elapsed since lastUpdated)
-    const adjustedRoom = this.getRoom(roomId);
-    if (!adjustedRoom) return;
+    room.playbackState.isPlaying = isPlaying;
+    room.playbackState.currentTime = currentTime;
+    room.playbackState.lastUpdated = Date.now();
 
-    const duration = room.currentTrack.duration || 0;
-    const currentTime = adjustedRoom.playbackState.currentTime;
-    
-    // Calculate remaining time in milliseconds
-    const remainingTime = (duration - currentTime) * 1000;
-
-    if (remainingTime > 0) {
-      const timer = setTimeout(() => {
-        if (this.onTrackEndCallback) {
-          this.onTrackEndCallback(roomId);
-        }
-      }, remainingTime);
-      this.timers.set(roomId, timer);
-      console.log(`[Timer] Set for room ${roomId}: ${Math.floor(remainingTime/1000)}s remaining`);
-    } else if (duration > 0) {
-      // If duration is set but we are at the end, trigger next immediately
-      if (this.onTrackEndCallback) {
-          this.onTrackEndCallback(roomId);
-      }
+    if (!room.playbackState.isPlaying) {
+      this.clearTrackTimer(roomId);
+      this.resetInactivityTimer(roomId);
+    } else {
+      this.stopInactivityTimer(roomId);
+      this.scheduleTrackEnd(roomId);
     }
-  }
 
-  private stopTrackTimer(roomId: string) {
-    const timer = this.timers.get(roomId);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(roomId);
-      console.log(`[Timer] Cleared for room ${roomId}`);
-    }
+    return true;
   }
 
   reorderQueue(roomId: string, userId: string, fromIndex: number, toIndex: number): boolean {
@@ -336,11 +409,13 @@ export class RoomsService {
       room.playbackState.currentTime = 0;
       room.playbackState.lastUpdated = Date.now();
       room.playbackState.isPlaying = true;
-      this.startTrackTimer(roomId); // Start timer for new track
+      this.stopInactivityTimer(roomId);
+      this.scheduleTrackEnd(roomId);
     } else {
       room.currentTrack = null;
       room.playbackState.isPlaying = false;
-      this.stopTrackTimer(roomId);
+      this.clearTrackTimer(roomId);
+      this.resetInactivityTimer(roomId); // Start inactivity timer if queue is empty
     }
 
     return room.currentTrack;

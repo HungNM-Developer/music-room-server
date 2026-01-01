@@ -15,17 +15,73 @@ const uuid_1 = require("uuid");
 const axios_1 = __importDefault(require("axios"));
 let RoomsService = class RoomsService {
     rooms = new Map();
-    timers = new Map();
+    inactivityTimers = new Map();
+    trackEndTimers = new Map();
     onTrackEndCallback;
-    colors = [
+    onRoomClosedCallback;
+    COLORS = [
         '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3',
         '#FFC300', '#DAF7A6', '#C70039', '#900C3F', '#581845'
     ];
     setTrackEndCallback(callback) {
         this.onTrackEndCallback = callback;
     }
+    setRoomClosedCallback(callback) {
+        this.onRoomClosedCallback = callback;
+    }
+    resetInactivityTimer(roomId) {
+        this.stopInactivityTimer(roomId);
+        const timer = setTimeout(() => {
+            console.log(`[Auto-Close] Room ${roomId} closed due to 1 hour of inactivity.`);
+            this.closeRoom(roomId);
+        }, 3600000);
+        this.inactivityTimers.set(roomId, timer);
+    }
+    stopInactivityTimer(roomId) {
+        const timer = this.inactivityTimers.get(roomId);
+        if (timer) {
+            clearTimeout(timer);
+            this.inactivityTimers.delete(roomId);
+        }
+    }
+    closeRoom(roomId) {
+        this.clearTrackTimer(roomId);
+        this.stopInactivityTimer(roomId);
+        this.rooms.delete(roomId);
+        if (this.onRoomClosedCallback) {
+            this.onRoomClosedCallback(roomId);
+        }
+    }
+    clearTrackTimer(roomId) {
+        const timer = this.trackEndTimers.get(roomId);
+        if (timer) {
+            clearTimeout(timer);
+            this.trackEndTimers.delete(roomId);
+        }
+    }
+    scheduleTrackEnd(roomId) {
+        this.clearTrackTimer(roomId);
+        const room = this.rooms.get(roomId);
+        if (!room || !room.currentTrack || !room.playbackState.isPlaying)
+            return;
+        const remainingSeconds = (room.currentTrack.duration || 0) - room.playbackState.currentTime;
+        if (remainingSeconds <= 0 && room.currentTrack.duration > 0) {
+            this.triggerTrackEnd(roomId);
+            return;
+        }
+        const timer = setTimeout(() => {
+            this.triggerTrackEnd(roomId);
+        }, Math.max(0, remainingSeconds * 1000));
+        this.trackEndTimers.set(roomId, timer);
+    }
+    triggerTrackEnd(roomId) {
+        this.nextTrack(roomId);
+        if (this.onTrackEndCallback) {
+            this.onTrackEndCallback(roomId);
+        }
+    }
     getRandomColor() {
-        return this.colors[Math.floor(Math.random() * this.colors.length)];
+        return this.COLORS[Math.floor(Math.random() * this.COLORS.length)];
     }
     createRoom(adminName, socketId) {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -52,6 +108,7 @@ let RoomsService = class RoomsService {
             },
         };
         this.rooms.set(roomId, room);
+        this.resetInactivityTimer(roomId);
         return room;
     }
     joinRoom(roomId, name, socketId) {
@@ -72,6 +129,7 @@ let RoomsService = class RoomsService {
             canControl: false,
         };
         room.users.push(user);
+        this.resetInactivityTimer(roomId);
         return { room, user };
     }
     leaveRoom(socketId) {
@@ -80,7 +138,7 @@ let RoomsService = class RoomsService {
             if (userIndex !== -1) {
                 const [user] = room.users.splice(userIndex, 1);
                 if (room.users.length === 0) {
-                    this.stopTrackTimer(roomId);
+                    this.clearTrackTimer(roomId);
                     this.rooms.delete(roomId);
                     return { roomId, room: null };
                 }
@@ -88,6 +146,7 @@ let RoomsService = class RoomsService {
                     room.users[0].role = 'admin';
                     room.adminId = room.users[0].userId;
                 }
+                this.resetInactivityTimer(roomId);
                 return { roomId, room };
             }
         }
@@ -96,16 +155,30 @@ let RoomsService = class RoomsService {
     getRoom(roomId) {
         const room = this.rooms.get(roomId);
         if (!room)
-            return undefined;
-        const adjustedRoom = { ...room };
-        if (room.playbackState.isPlaying) {
-            const elapsed = (Date.now() - room.playbackState.lastUpdated) / 1000;
-            adjustedRoom.playbackState = {
-                ...room.playbackState,
-                currentTime: room.playbackState.currentTime + elapsed,
+            return null;
+        return this.getAdjustedRoom(room);
+    }
+    getAdjustedRoom(room) {
+        if (!room.currentTrack || !room.playbackState.isPlaying) {
+            return room;
+        }
+        const now = Date.now();
+        const elapsed = (now - room.playbackState.lastUpdated) / 1000;
+        const calculatedTime = room.playbackState.currentTime + elapsed;
+        if (calculatedTime >= (room.currentTrack.duration || Infinity)) {
+            return {
+                ...room,
+                playbackState: { ...room.playbackState, currentTime: room.currentTrack.duration }
             };
         }
-        return adjustedRoom;
+        return {
+            ...room,
+            playbackState: {
+                ...room.playbackState,
+                currentTime: calculatedTime,
+                lastUpdated: now
+            }
+        };
     }
     async fetchYoutubeMetadata(url) {
         try {
@@ -149,10 +222,12 @@ let RoomsService = class RoomsService {
             room.playbackState.isPlaying = true;
             room.playbackState.lastUpdated = Date.now();
             room.playbackState.currentTime = 0;
-            this.startTrackTimer(roomId);
+            this.stopInactivityTimer(roomId);
+            this.scheduleTrackEnd(roomId);
         }
         else {
             room.queue.push(newTrack);
+            this.resetInactivityTimer(roomId);
         }
         return { track: newTrack };
     }
@@ -169,6 +244,7 @@ let RoomsService = class RoomsService {
         const track = room.queue[trackIndex];
         if (user.role === 'admin' || track.addedBy === userId) {
             room.queue.splice(trackIndex, 1);
+            this.resetInactivityTimer(roomId);
             return true;
         }
         return false;
@@ -186,46 +262,29 @@ let RoomsService = class RoomsService {
             lastUpdated: Date.now(),
         };
         if (room.playbackState.isPlaying) {
-            this.startTrackTimer(roomId);
+            this.stopInactivityTimer(roomId);
         }
         else {
-            this.stopTrackTimer(roomId);
+            this.resetInactivityTimer(roomId);
         }
         return true;
     }
-    startTrackTimer(roomId) {
-        this.stopTrackTimer(roomId);
+    syncPlayback(roomId, userId, isPlaying, currentTime) {
         const room = this.rooms.get(roomId);
-        if (!room || !room.currentTrack || !room.playbackState.isPlaying)
-            return;
-        const adjustedRoom = this.getRoom(roomId);
-        if (!adjustedRoom)
-            return;
-        const duration = room.currentTrack.duration || 0;
-        const currentTime = adjustedRoom.playbackState.currentTime;
-        const remainingTime = (duration - currentTime) * 1000;
-        if (remainingTime > 0) {
-            const timer = setTimeout(() => {
-                if (this.onTrackEndCallback) {
-                    this.onTrackEndCallback(roomId);
-                }
-            }, remainingTime);
-            this.timers.set(roomId, timer);
-            console.log(`[Timer] Set for room ${roomId}: ${Math.floor(remainingTime / 1000)}s remaining`);
+        if (!room)
+            return false;
+        room.playbackState.isPlaying = isPlaying;
+        room.playbackState.currentTime = currentTime;
+        room.playbackState.lastUpdated = Date.now();
+        if (!room.playbackState.isPlaying) {
+            this.clearTrackTimer(roomId);
+            this.resetInactivityTimer(roomId);
         }
-        else if (duration > 0) {
-            if (this.onTrackEndCallback) {
-                this.onTrackEndCallback(roomId);
-            }
+        else {
+            this.stopInactivityTimer(roomId);
+            this.scheduleTrackEnd(roomId);
         }
-    }
-    stopTrackTimer(roomId) {
-        const timer = this.timers.get(roomId);
-        if (timer) {
-            clearTimeout(timer);
-            this.timers.delete(roomId);
-            console.log(`[Timer] Cleared for room ${roomId}`);
-        }
+        return true;
     }
     reorderQueue(roomId, userId, fromIndex, toIndex) {
         const room = this.rooms.get(roomId);
@@ -288,12 +347,14 @@ let RoomsService = class RoomsService {
             room.playbackState.currentTime = 0;
             room.playbackState.lastUpdated = Date.now();
             room.playbackState.isPlaying = true;
-            this.startTrackTimer(roomId);
+            this.stopInactivityTimer(roomId);
+            this.scheduleTrackEnd(roomId);
         }
         else {
             room.currentTrack = null;
             room.playbackState.isPlaying = false;
-            this.stopTrackTimer(roomId);
+            this.clearTrackTimer(roomId);
+            this.resetInactivityTimer(roomId);
         }
         return room.currentTrack;
     }
