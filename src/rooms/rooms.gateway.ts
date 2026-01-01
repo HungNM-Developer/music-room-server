@@ -22,7 +22,13 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly roomsService: RoomsService) {}
+  constructor(private readonly roomsService: RoomsService) {
+    this.roomsService.setTrackEndCallback((roomId) => {
+      console.log(`[Timer] Track ended automatically in room ${roomId}`);
+      this.roomsService.nextTrack(roomId);
+      this.broadcastRoomUpdate(roomId);
+    });
+  }
 
   handleConnection(client: Socket) {
     console.log(`Client connected: ${client.id}`);
@@ -92,11 +98,22 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('queue:add')
   async handleAddTrack(
-    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string },
+    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string; duration?: number },
+    @ConnectedSocket() client: Socket,
   ) {
-    const track = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId);
+    const { track, error } = await this.roomsService.addTrack(
+      data.roomId,
+      data.youtubeUrl,
+      data.userId,
+      data.duration,
+    );
+    
     if (track) {
       this.broadcastRoomUpdate(data.roomId);
+    } else if (error === 'TRACK_LIMIT_REACHED') {
+      client.emit('error', { message: 'Bạn không thể thêm quá 4 bài cùng lúc trong hàng đợi' });
+    } else {
+      client.emit('error', { message: 'Không thể thêm bài hát. Vui lòng thử lại.' });
     }
   }
 
@@ -150,12 +167,31 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage('room:share-admin')
-  handleShareAdmin(
+  @SubscribeMessage('permission:set-control')
+  handleSetControlPermission(
+    @MessageBody() data: { roomId: string; requesterId: string; targetUserId: string; canControl: boolean },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.setControlPermission(
+      data.roomId,
+      data.requesterId,
+      data.targetUserId,
+      data.canControl,
+    );
+
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Failed to set control permission' });
+    }
+  }
+
+  @SubscribeMessage('permission:set-player')
+  handleSetPlayerPermission(
     @MessageBody() data: { roomId: string; requesterId: string; targetUserId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const success = this.roomsService.shareAdmin(
+    const success = this.roomsService.setPlayerPermission(
       data.roomId,
       data.requesterId,
       data.targetUserId,
@@ -164,7 +200,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (success) {
       this.broadcastRoomUpdate(data.roomId);
     } else {
-      client.emit('error', { message: 'Failed to share admin rights' });
+      client.emit('error', { message: 'Failed to set player permission' });
     }
   }
 
@@ -191,6 +227,19 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     this.roomsService.nextTrack(data.roomId);
     this.broadcastRoomUpdate(data.roomId);
+  }
+
+  @SubscribeMessage('queue:heart')
+  handleHeartTrack(
+    @MessageBody() data: { roomId: string; trackId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.heartTrack(data.roomId, data.trackId, data.userId);
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Failed to heart track' });
+    }
   }
 
   private broadcastRoomUpdate(roomId: string) {

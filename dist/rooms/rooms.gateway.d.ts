@@ -19,7 +19,8 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         roomId: string;
         youtubeUrl: string;
         userId: string;
-    }): Promise<void>;
+        duration?: number;
+    }, client: Socket): Promise<void>;
     handleRemoveTrack(data: {
         roomId: string;
         trackId: string;
@@ -36,6 +37,17 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         currentAdminId: string;
         newAdminId: string;
     }, client: Socket): void;
+    handleSetControlPermission(data: {
+        roomId: string;
+        requesterId: string;
+        targetUserId: string;
+        canControl: boolean;
+    }, client: Socket): void;
+    handleSetPlayerPermission(data: {
+        roomId: string;
+        requesterId: string;
+        targetUserId: string;
+    }, client: Socket): void;
     handlePlaybackSync(data: {
         roomId: string;
         userId: string;
@@ -45,6 +57,11 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
     handleTrackEnd(data: {
         roomId: string;
     }): void;
+    handleHeartTrack(data: {
+        roomId: string;
+        trackId: string;
+        userId: string;
+    }, client: Socket): void;
     private broadcastRoomUpdate;
     private mapRoomForClient;
 }

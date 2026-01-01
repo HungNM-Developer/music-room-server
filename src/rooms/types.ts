@@ -6,6 +6,8 @@ export interface User {
   name: string;
   role: Role;
   color: string; // Hex code for avatar background
+  canPlay: boolean;    // Designated player/source of music
+  canControl: boolean; // Permission to reorder/skip/pause
 }
 
 export interface Track {
@@ -15,6 +17,8 @@ export interface Track {
   thumbnail: string;
   duration: number; // in seconds
   addedBy: string; // userId
+  hearts: string[]; // List of userIds who liked this track
+  addedAt: number; // timestamp when added
 }
 
 export interface PlaybackState {

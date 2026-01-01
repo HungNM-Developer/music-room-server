@@ -15,10 +15,15 @@ const uuid_1 = require("uuid");
 const axios_1 = __importDefault(require("axios"));
 let RoomsService = class RoomsService {
     rooms = new Map();
+    timers = new Map();
+    onTrackEndCallback;
     colors = [
         '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3',
         '#FFC300', '#DAF7A6', '#C70039', '#900C3F', '#581845'
     ];
+    setTrackEndCallback(callback) {
+        this.onTrackEndCallback = callback;
+    }
     getRandomColor() {
         return this.colors[Math.floor(Math.random() * this.colors.length)];
     }
@@ -31,6 +36,8 @@ let RoomsService = class RoomsService {
             name: adminName,
             role: 'admin',
             color: this.getRandomColor(),
+            canPlay: true,
+            canControl: true,
         };
         const room = {
             roomId,
@@ -61,6 +68,8 @@ let RoomsService = class RoomsService {
             name,
             role: 'user',
             color: this.getRandomColor(),
+            canPlay: false,
+            canControl: false,
         };
         room.users.push(user);
         return { room, user };
@@ -71,6 +80,7 @@ let RoomsService = class RoomsService {
             if (userIndex !== -1) {
                 const [user] = room.users.splice(userIndex, 1);
                 if (room.users.length === 0) {
+                    this.stopTrackTimer(roomId);
                     this.rooms.delete(roomId);
                     return { roomId, room: null };
                 }
@@ -116,27 +126,35 @@ let RoomsService = class RoomsService {
             };
         }
     }
-    async addTrack(roomId, youtubeUrl, userId) {
+    async addTrack(roomId, youtubeUrl, userId, duration) {
         const room = this.rooms.get(roomId);
         if (!room)
-            return null;
+            return { track: null, error: 'ROOM_NOT_FOUND' };
+        const userTrackCount = room.queue.filter(t => t.addedBy === userId).length;
+        if (userTrackCount >= 4) {
+            return { track: null, error: 'TRACK_LIMIT_REACHED' };
+        }
         const metadata = await this.fetchYoutubeMetadata(youtubeUrl);
         const newTrack = {
             trackId: (0, uuid_1.v4)(),
             youtubeUrl,
             addedBy: userId,
             ...metadata,
+            duration: duration || metadata.duration || 0,
+            hearts: [],
+            addedAt: Date.now(),
         };
         if (!room.currentTrack) {
             room.currentTrack = newTrack;
             room.playbackState.isPlaying = true;
             room.playbackState.lastUpdated = Date.now();
             room.playbackState.currentTime = 0;
+            this.startTrackTimer(roomId);
         }
         else {
             room.queue.push(newTrack);
         }
-        return newTrack;
+        return { track: newTrack };
     }
     removeTrack(roomId, trackId, userId) {
         const room = this.rooms.get(roomId);
@@ -160,21 +178,61 @@ let RoomsService = class RoomsService {
         if (!room)
             return false;
         const user = room.users.find(u => u.userId === userId);
-        if (!user || user.role !== 'admin')
+        if (!user || (!user.canPlay && user.role !== 'admin'))
             return false;
         room.playbackState = {
             ...room.playbackState,
             ...state,
             lastUpdated: Date.now(),
         };
+        if (room.playbackState.isPlaying) {
+            this.startTrackTimer(roomId);
+        }
+        else {
+            this.stopTrackTimer(roomId);
+        }
         return true;
+    }
+    startTrackTimer(roomId) {
+        this.stopTrackTimer(roomId);
+        const room = this.rooms.get(roomId);
+        if (!room || !room.currentTrack || !room.playbackState.isPlaying)
+            return;
+        const adjustedRoom = this.getRoom(roomId);
+        if (!adjustedRoom)
+            return;
+        const duration = room.currentTrack.duration || 0;
+        const currentTime = adjustedRoom.playbackState.currentTime;
+        const remainingTime = (duration - currentTime) * 1000;
+        if (remainingTime > 0) {
+            const timer = setTimeout(() => {
+                if (this.onTrackEndCallback) {
+                    this.onTrackEndCallback(roomId);
+                }
+            }, remainingTime);
+            this.timers.set(roomId, timer);
+            console.log(`[Timer] Set for room ${roomId}: ${Math.floor(remainingTime / 1000)}s remaining`);
+        }
+        else if (duration > 0) {
+            if (this.onTrackEndCallback) {
+                this.onTrackEndCallback(roomId);
+            }
+        }
+    }
+    stopTrackTimer(roomId) {
+        const timer = this.timers.get(roomId);
+        if (timer) {
+            clearTimeout(timer);
+            this.timers.delete(roomId);
+            console.log(`[Timer] Cleared for room ${roomId}`);
+        }
     }
     reorderQueue(roomId, userId, fromIndex, toIndex) {
         const room = this.rooms.get(roomId);
         if (!room)
             return false;
         const user = room.users.find((u) => u.userId === userId);
-        if (!user || user.role !== 'admin')
+        if (!user || (!user.canControl && user.role !== 'admin'))
             return false;
         if (fromIndex < 0 || fromIndex >= room.queue.length ||
             toIndex < 0 || toIndex >= room.queue.length) {
@@ -197,6 +255,28 @@ let RoomsService = class RoomsService {
         currentAdmin.role = 'user';
         targetUser.role = 'admin';
         room.adminId = newAdminId;
+        targetUser.canControl = true;
+        return true;
+    }
+    setControlPermission(roomId, requesterId, targetUserId, canControl) {
+        const room = this.rooms.get(roomId);
+        if (!room || room.adminId !== requesterId)
+            return false;
+        const targetUser = room.users.find(u => u.userId === targetUserId);
+        if (!targetUser)
+            return false;
+        targetUser.canControl = canControl;
+        return true;
+    }
+    setPlayerPermission(roomId, requesterId, targetUserId) {
+        const room = this.rooms.get(roomId);
+        if (!room || room.adminId !== requesterId)
+            return false;
+        room.users.forEach(u => u.canPlay = false);
+        const targetUser = room.users.find(u => u.userId === targetUserId);
+        if (!targetUser)
+            return false;
+        targetUser.canPlay = true;
         return true;
     }
     nextTrack(roomId) {
@@ -208,12 +288,39 @@ let RoomsService = class RoomsService {
             room.playbackState.currentTime = 0;
             room.playbackState.lastUpdated = Date.now();
             room.playbackState.isPlaying = true;
+            this.startTrackTimer(roomId);
         }
         else {
             room.currentTrack = null;
             room.playbackState.isPlaying = false;
+            this.stopTrackTimer(roomId);
         }
         return room.currentTrack;
+    }
+    heartTrack(roomId, trackId, userId) {
+        const room = this.rooms.get(roomId);
+        if (!room)
+            return false;
+        room.queue.forEach((track) => {
+            const index = track.hearts.indexOf(userId);
+            if (index !== -1) {
+                track.hearts.splice(index, 1);
+            }
+        });
+        const targetTrack = room.queue.find((t) => t.trackId === trackId);
+        if (targetTrack) {
+            targetTrack.hearts.push(userId);
+        }
+        else {
+            return false;
+        }
+        room.queue.sort((a, b) => {
+            if (b.hearts.length !== a.hearts.length) {
+                return b.hearts.length - a.hearts.length;
+            }
+            return a.addedAt - b.addedAt;
+        });
+        return true;
     }
 };
 exports.RoomsService = RoomsService;

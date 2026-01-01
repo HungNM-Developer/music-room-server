@@ -21,6 +21,11 @@ let RoomsGateway = class RoomsGateway {
     server;
     constructor(roomsService) {
         this.roomsService = roomsService;
+        this.roomsService.setTrackEndCallback((roomId) => {
+            console.log(`[Timer] Track ended automatically in room ${roomId}`);
+            this.roomsService.nextTrack(roomId);
+            this.broadcastRoomUpdate(roomId);
+        });
     }
     handleConnection(client) {
         console.log(`Client connected: ${client.id}`);
@@ -33,7 +38,7 @@ let RoomsGateway = class RoomsGateway {
                 this.broadcastRoomUpdate(roomId);
             }
         }
-        console.log(`Client disconnected: ${client.id}`);
+        console.log(`[Socket] Client disconnected: ${client.id}`);
     }
     handleCreateRoom(data, client) {
         const room = this.roomsService.createRoom(data.name, client.id);
@@ -68,10 +73,16 @@ let RoomsGateway = class RoomsGateway {
             console.log(`Client ${client.id} manually left room ${roomId}`);
         }
     }
-    async handleAddTrack(data) {
-        const track = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId);
+    async handleAddTrack(data, client) {
+        const { track, error } = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId, data.duration);
         if (track) {
             this.broadcastRoomUpdate(data.roomId);
+        }
+        else if (error === 'TRACK_LIMIT_REACHED') {
+            client.emit('error', { message: 'Bạn không thể thêm quá 4 bài cùng lúc trong hàng đợi' });
+        }
+        else {
+            client.emit('error', { message: 'Không thể thêm bài hát. Vui lòng thử lại.' });
         }
     }
     handleRemoveTrack(data, client) {
@@ -101,6 +112,24 @@ let RoomsGateway = class RoomsGateway {
             client.emit('error', { message: 'Failed to transfer admin rights' });
         }
     }
+    handleSetControlPermission(data, client) {
+        const success = this.roomsService.setControlPermission(data.roomId, data.requesterId, data.targetUserId, data.canControl);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Failed to set control permission' });
+        }
+    }
+    handleSetPlayerPermission(data, client) {
+        const success = this.roomsService.setPlayerPermission(data.roomId, data.requesterId, data.targetUserId);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Failed to set player permission' });
+        }
+    }
     handlePlaybackSync(data, client) {
         const success = this.roomsService.updatePlayback(data.roomId, data.userId, {
             isPlaying: data.isPlaying,
@@ -113,6 +142,15 @@ let RoomsGateway = class RoomsGateway {
     handleTrackEnd(data) {
         this.roomsService.nextTrack(data.roomId);
         this.broadcastRoomUpdate(data.roomId);
+    }
+    handleHeartTrack(data, client) {
+        const success = this.roomsService.heartTrack(data.roomId, data.trackId, data.userId);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Failed to heart track' });
+        }
     }
     broadcastRoomUpdate(roomId) {
         const room = this.roomsService.getRoom(roomId);
@@ -158,8 +196,9 @@ __decorate([
 __decorate([
     (0, websockets_1.SubscribeMessage)('queue:add'),
     __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", Promise)
 ], RoomsGateway.prototype, "handleAddTrack", null);
 __decorate([
@@ -187,6 +226,22 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleTransferAdmin", null);
 __decorate([
+    (0, websockets_1.SubscribeMessage)('permission:set-control'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleSetControlPermission", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('permission:set-player'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleSetPlayerPermission", null);
+__decorate([
     (0, websockets_1.SubscribeMessage)('playback:sync'),
     __param(0, (0, websockets_1.MessageBody)()),
     __param(1, (0, websockets_1.ConnectedSocket)()),
@@ -201,11 +256,21 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleTrackEnd", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('queue:heart'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleHeartTrack", null);
 exports.RoomsGateway = RoomsGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {
             origin: '*',
         },
+        pingTimeout: 60000,
+        pingInterval: 25000,
     }),
     __metadata("design:paramtypes", [rooms_service_1.RoomsService])
 ], RoomsGateway);
