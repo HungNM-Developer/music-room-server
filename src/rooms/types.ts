@@ -34,6 +34,7 @@ export interface Room {
   queue: Track[];
   currentTrack: Track | null;
   playbackState: PlaybackState;
+  skipVotes: string[]; // List of userIds who voted to skip current track
 }
 
 export interface RoomStateUpdate extends Omit<Room, 'users'> {

@@ -106,6 +106,7 @@ let RoomsService = class RoomsService {
                 currentTime: 0,
                 lastUpdated: Date.now(),
             },
+            skipVotes: [],
         };
         this.rooms.set(roomId, room);
         this.resetInactivityTimer(roomId);
@@ -356,7 +357,24 @@ let RoomsService = class RoomsService {
             this.clearTrackTimer(roomId);
             this.resetInactivityTimer(roomId);
         }
+        room.skipVotes = [];
         return room.currentTrack;
+    }
+    voteSkip(roomId, userId) {
+        const room = this.rooms.get(roomId);
+        if (!room || !room.currentTrack)
+            return { skipped: false, votes: 0, required: 0 };
+        if (!room.skipVotes.includes(userId)) {
+            room.skipVotes.push(userId);
+        }
+        const activeVotes = room.skipVotes.filter(uid => room.users.some(u => u.userId === uid)).length;
+        const totalUsers = room.users.length;
+        const requiredVotes = Math.floor(totalUsers / 2) + 1;
+        if (activeVotes >= requiredVotes) {
+            this.nextTrack(roomId);
+            return { skipped: true, votes: activeVotes, required: requiredVotes };
+        }
+        return { skipped: false, votes: activeVotes, required: requiredVotes };
     }
     heartTrack(roomId, trackId, userId) {
         const room = this.rooms.get(roomId);

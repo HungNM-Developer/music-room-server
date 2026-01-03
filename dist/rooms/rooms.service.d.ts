@@ -44,5 +44,10 @@ export declare class RoomsService {
     setControlPermission(roomId: string, requesterId: string, targetUserId: string, canControl: boolean): boolean;
     setPlayerPermission(roomId: string, requesterId: string, targetUserId: string): boolean;
     nextTrack(roomId: string): Track | null;
+    voteSkip(roomId: string, userId: string): {
+        skipped: boolean;
+        votes: number;
+        required: number;
+    };
     heartTrack(roomId: string, trackId: string, userId: string): boolean;
 }

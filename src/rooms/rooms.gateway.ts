@@ -234,6 +234,19 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.broadcastRoomUpdate(data.roomId);
   }
 
+  @SubscribeMessage('queue:vote-skip')
+  handleVoteSkip(
+    @MessageBody() data: { roomId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const result = this.roomsService.voteSkip(data.roomId, data.userId);
+    if (result.skipped || result.votes > 0) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Vote skip failed' });
+    }
+  }
+
   @SubscribeMessage('queue:heart')
   handleHeartTrack(
     @MessageBody() data: { roomId: string; trackId: string; userId: string },

@@ -30,6 +30,7 @@ export interface Room {
     queue: Track[];
     currentTrack: Track | null;
     playbackState: PlaybackState;
+    skipVotes: string[];
 }
 export interface RoomStateUpdate extends Omit<Room, 'users'> {
     users: Omit<User, 'socketId'>[];

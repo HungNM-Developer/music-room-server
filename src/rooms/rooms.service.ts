@@ -116,6 +116,7 @@ export class RoomsService {
         currentTime: 0,
         lastUpdated: Date.now(),
       },
+      skipVotes: [],
     };
 
     this.rooms.set(roomId, room);
@@ -399,7 +400,6 @@ export class RoomsService {
     targetUser.canPlay = true;
     return true;
   }
-
   nextTrack(roomId: string): Track | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
@@ -415,10 +415,35 @@ export class RoomsService {
       room.currentTrack = null;
       room.playbackState.isPlaying = false;
       this.clearTrackTimer(roomId);
-      this.resetInactivityTimer(roomId); // Start inactivity timer if queue is empty
+      this.resetInactivityTimer(roomId);
     }
 
+    room.skipVotes = [];
     return room.currentTrack;
+  }
+
+  voteSkip(roomId: string, userId: string): { skipped: boolean; votes: number; required: number } {
+    const room = this.rooms.get(roomId);
+    if (!room || !room.currentTrack) return { skipped: false, votes: 0, required: 0 };
+
+    if (!room.skipVotes.includes(userId)) {
+      room.skipVotes.push(userId);
+    }
+
+    // Only count votes from users who are still in the room
+    const activeVotes = room.skipVotes.filter(uid => 
+      room.users.some(u => u.userId === uid)
+    ).length;
+
+    const totalUsers = room.users.length;
+    const requiredVotes = Math.floor(totalUsers / 2) + 1;
+
+    if (activeVotes >= requiredVotes) {
+      this.nextTrack(roomId);
+      return { skipped: true, votes: activeVotes, required: requiredVotes };
+    }
+
+    return { skipped: false, votes: activeVotes, required: requiredVotes };
   }
 
   heartTrack(roomId: string, trackId: string, userId: string): boolean {

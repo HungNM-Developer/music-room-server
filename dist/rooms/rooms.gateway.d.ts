@@ -57,6 +57,10 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
     handleTrackEnd(data: {
         roomId: string;
     }): void;
+    handleVoteSkip(data: {
+        roomId: string;
+        userId: string;
+    }, client: Socket): void;
     handleHeartTrack(data: {
         roomId: string;
         trackId: string;

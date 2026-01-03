@@ -147,6 +147,15 @@ let RoomsGateway = class RoomsGateway {
         this.roomsService.nextTrack(data.roomId);
         this.broadcastRoomUpdate(data.roomId);
     }
+    handleVoteSkip(data, client) {
+        const result = this.roomsService.voteSkip(data.roomId, data.userId);
+        if (result.skipped || result.votes > 0) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Vote skip failed' });
+        }
+    }
     handleHeartTrack(data, client) {
         const success = this.roomsService.heartTrack(data.roomId, data.trackId, data.userId);
         if (success) {
@@ -260,6 +269,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleTrackEnd", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('queue:vote-skip'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleVoteSkip", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('queue:heart'),
     __param(0, (0, websockets_1.MessageBody)()),
