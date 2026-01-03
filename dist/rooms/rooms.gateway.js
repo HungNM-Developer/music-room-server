@@ -165,6 +165,12 @@ let RoomsGateway = class RoomsGateway {
             client.emit('error', { message: 'Failed to heart track' });
         }
     }
+    handleReaction(data) {
+        this.server.to(data.roomId).emit('room:reaction', { emoji: data.emoji, id: Math.random() });
+    }
+    handleSoundEffect(data) {
+        this.server.to(data.roomId).emit('room:sound-effect', { effect: data.effect });
+    }
     broadcastRoomUpdate(roomId) {
         const room = this.roomsService.getRoom(roomId);
         if (room) {
@@ -285,6 +291,20 @@ __decorate([
     __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleHeartTrack", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('room:reaction'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleReaction", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('room:sound-effect'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleSoundEffect", null);
 exports.RoomsGateway = RoomsGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {

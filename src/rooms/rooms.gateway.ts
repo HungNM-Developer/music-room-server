@@ -260,6 +260,20 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('room:reaction')
+  handleReaction(
+    @MessageBody() data: { roomId: string; emoji: string },
+  ) {
+    this.server.to(data.roomId).emit('room:reaction', { emoji: data.emoji, id: Math.random() });
+  }
+
+  @SubscribeMessage('room:sound-effect')
+  handleSoundEffect(
+    @MessageBody() data: { roomId: string; effect: string },
+  ) {
+    this.server.to(data.roomId).emit('room:sound-effect', { effect: data.effect });
+  }
+
   private broadcastRoomUpdate(roomId: string) {
     const room = this.roomsService.getRoom(roomId);
     if (room) {

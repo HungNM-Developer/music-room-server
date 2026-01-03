@@ -66,6 +66,14 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         trackId: string;
         userId: string;
     }, client: Socket): void;
+    handleReaction(data: {
+        roomId: string;
+        emoji: string;
+    }): void;
+    handleSoundEffect(data: {
+        roomId: string;
+        effect: string;
+    }): void;
     private broadcastRoomUpdate;
     private mapRoomForClient;
 }
