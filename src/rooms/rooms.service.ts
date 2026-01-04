@@ -157,6 +157,24 @@ export class RoomsService {
       if (userIndex !== -1) {
         const [user] = room.users.splice(userIndex, 1);
         
+        // Remove this user's hearts from all tracks in the queue
+        room.queue.forEach(track => {
+          track.hearts = track.hearts.filter(id => id !== user.userId);
+        });
+        
+        // Also remove heart from current track if it exists
+        if (room.currentTrack) {
+          room.currentTrack.hearts = room.currentTrack.hearts.filter(id => id !== user.userId);
+        }
+
+        // Re-sort queue after removing hearts
+        room.queue.sort((a, b) => {
+          if (b.hearts.length !== a.hearts.length) {
+            return b.hearts.length - a.hearts.length;
+          }
+          return a.addedAt - b.addedAt;
+        });
+
         // Scenario 1: Room becomes empty
         if (room.users.length === 0) {
           this.clearTrackTimer(roomId);
