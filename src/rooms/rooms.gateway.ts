@@ -228,9 +228,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('track:end')
   handleTrackEnd(
-    @MessageBody() data: { roomId: string },
+    @MessageBody() data: { roomId: string; trackId?: string },
   ) {
-    this.roomsService.nextTrack(data.roomId);
+    this.roomsService.nextTrack(data.roomId, data.trackId);
     this.broadcastRoomUpdate(data.roomId);
   }
 

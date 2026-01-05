@@ -66,22 +66,24 @@ export class RoomsService {
     const room = this.rooms.get(roomId);
     if (!room || !room.currentTrack || !room.playbackState.isPlaying) return;
 
+    const currentTrackId = room.currentTrack.trackId;
     const remainingSeconds = (room.currentTrack.duration || 0) - room.playbackState.currentTime;
+    
     if (remainingSeconds <= 0 && room.currentTrack.duration > 0) {
-      this.triggerTrackEnd(roomId);
+      this.triggerTrackEnd(roomId, currentTrackId);
       return;
     }
 
     // Set a one-shot timer for the exact end of the track
     const timer = setTimeout(() => {
-      this.triggerTrackEnd(roomId);
+      this.triggerTrackEnd(roomId, currentTrackId);
     }, Math.max(0, remainingSeconds * 1000));
 
     this.trackEndTimers.set(roomId, timer);
   }
 
-  private triggerTrackEnd(roomId: string) {
-    this.nextTrack(roomId);
+  private triggerTrackEnd(roomId: string, expectedTrackId: string) {
+    this.nextTrack(roomId, expectedTrackId);
     if (this.onTrackEndCallback) {
       this.onTrackEndCallback(roomId);
     }
@@ -166,6 +168,9 @@ export class RoomsService {
         if (room.currentTrack) {
           room.currentTrack.hearts = room.currentTrack.hearts.filter(id => id !== user.userId);
         }
+        
+        // Also remove from skipVotes
+        room.skipVotes = room.skipVotes.filter(id => id !== user.userId);
 
         // Re-sort queue after removing hearts
         room.queue.sort((a, b) => {
@@ -188,6 +193,17 @@ export class RoomsService {
           room.adminId = room.users[0].userId;
         }
         
+        // After someone leaves, check if the remaining skip votes meet the new threshold
+        if (room.currentTrack) {
+            const activeVotes = room.skipVotes.filter(uid => 
+                room.users.some(u => u.userId === uid)
+            ).length;
+            const requiredVotes = Math.floor(room.users.length / 2) + 1;
+            if (activeVotes >= requiredVotes) {
+                this.nextTrack(roomId, room.currentTrack.trackId);
+            }
+        }
+
         this.resetInactivityTimer(roomId);
         return { roomId, room };
       }
@@ -418,9 +434,15 @@ export class RoomsService {
     targetUser.canPlay = true;
     return true;
   }
-  nextTrack(roomId: string): Track | null {
+  nextTrack(roomId: string, fromTrackId?: string): Track | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
+
+    // Race condition protection: If we expect a specific track to be ending, 
+    // verify it's still the current track before shifting the queue.
+    if (fromTrackId && room.currentTrack && room.currentTrack.trackId !== fromTrackId) {
+      return room.currentTrack;
+    }
 
     if (room.queue.length > 0) {
       room.currentTrack = room.queue.shift() || null;
@@ -457,7 +479,7 @@ export class RoomsService {
     const requiredVotes = Math.floor(totalUsers / 2) + 1;
 
     if (activeVotes >= requiredVotes) {
-      this.nextTrack(roomId);
+      this.nextTrack(roomId, room.currentTrack.trackId);
       return { skipped: true, votes: activeVotes, required: requiredVotes };
     }
 
