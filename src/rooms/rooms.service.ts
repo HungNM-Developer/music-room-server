@@ -66,10 +66,15 @@ export class RoomsService {
     const room = this.rooms.get(roomId);
     if (!room || !room.currentTrack || !room.playbackState.isPlaying) return;
 
+    // FIX: If duration is 0 (unknown), DO NOT schedule a server-side timer.
+    // We must rely on the client (broadcaster) to report when the track ends via 'track:end'.
+    // Otherwise, this triggers immediately and skips the track.
+    if (!room.currentTrack.duration || room.currentTrack.duration <= 0) return;
+
     const currentTrackId = room.currentTrack.trackId;
     const remainingSeconds = (room.currentTrack.duration || 0) - room.playbackState.currentTime;
     
-    if (remainingSeconds <= 0 && room.currentTrack.duration > 0) {
+    if (remainingSeconds <= 0) {
       this.triggerTrackEnd(roomId, currentTrackId);
       return;
     }
