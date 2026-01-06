@@ -24,8 +24,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly roomsService: RoomsService) {
     this.roomsService.setTrackEndCallback((roomId) => {
-      console.log(`[Timer] Track ended automatically in room ${roomId}`);
-      this.roomsService.nextTrack(roomId);
+      console.log(`[Event] Track transition confirmed for room ${roomId}`);
+      // nextTrack was already called inside Service.triggerTrackEnd.
+      // Calling it again here was the source of the double-skip bug.
       this.broadcastRoomUpdate(roomId);
     });
 

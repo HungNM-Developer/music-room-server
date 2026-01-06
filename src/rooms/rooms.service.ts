@@ -88,6 +88,8 @@ export class RoomsService {
   }
 
   private triggerTrackEnd(roomId: string, expectedTrackId: string) {
+    // We only trigger nextTrack here. We do NOT call the callback 
+    // to change state again, the callback is only for BROADCASTING.
     this.nextTrack(roomId, expectedTrackId);
     if (this.onTrackEndCallback) {
       this.onTrackEndCallback(roomId);
@@ -336,7 +338,6 @@ export class RoomsService {
     if (!room) return false;
 
     const user = room.users.find(u => u.userId === userId);
-    // Only the designated player or the admin can update playback (Play/Pause)
     if (!user || (!user.canPlay && user.role !== 'admin')) return false;
 
     room.playbackState = {
@@ -345,34 +346,21 @@ export class RoomsService {
       lastUpdated: Date.now(),
     };
 
-    // Update timer based on new state
+    // CRITICAL FIX: Every time playback state changes (Play/Pause/Seek), 
+    // we MUST reschedule or clear the server-side track end timer.
     if (room.playbackState.isPlaying) {
       this.stopInactivityTimer(roomId);
-    } else {
-      this.resetInactivityTimer(roomId); // Start counting down inactivity when paused
-    }
-
-    return true;
-  }
-
-  syncPlayback(roomId: string, userId: string, isPlaying: boolean, currentTime: number) {
-    const room = this.rooms.get(roomId);
-    if (!room) return false;
-
-    room.playbackState.isPlaying = isPlaying;
-    room.playbackState.currentTime = currentTime;
-    room.playbackState.lastUpdated = Date.now();
-
-    if (!room.playbackState.isPlaying) {
-      this.clearTrackTimer(roomId);
-      this.resetInactivityTimer(roomId);
-    } else {
-      this.stopInactivityTimer(roomId);
       this.scheduleTrackEnd(roomId);
+    } else {
+      this.clearTrackTimer(roomId);
+      this.resetInactivityTimer(roomId); 
     }
 
     return true;
   }
+
+  // syncPlayback was redundant and partially implemented. 
+  // We use updatePlayback as the single source of truth.
 
   reorderQueue(roomId: string, userId: string, fromIndex: number, toIndex: number): boolean {
     const room = this.rooms.get(roomId);
