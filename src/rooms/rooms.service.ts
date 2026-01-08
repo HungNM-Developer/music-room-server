@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Room, User, Track, PlaybackState } from './types';
+import { Room, User, Track, PlaybackState, ActivityLog } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
@@ -10,9 +10,10 @@ export class RoomsService {
   private trackEndTimers: Map<string, NodeJS.Timeout> = new Map();
   private onTrackEndCallback: (roomId: string) => void;
   private onRoomClosedCallback: (roomId: string) => void;
+  private onActivityLogCallback: (roomId: string, log: ActivityLog) => void;
 
   private COLORS = [
-    '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3', 
+    '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF3',
     '#FFC300', '#DAF7A6', '#C70039', '#900C3F', '#581845'
   ];
 
@@ -24,14 +25,58 @@ export class RoomsService {
     this.onRoomClosedCallback = callback;
   }
 
+  setActivityLogCallback(callback: (roomId: string, log: ActivityLog) => void) {
+    this.onActivityLogCallback = callback;
+  }
+
+  public logActivity(
+    roomId: string,
+    type: ActivityLog['type'],
+    userId: string,
+    userName: string,
+    message: string,
+    metadata?: Record<string, any>
+  ) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const log: ActivityLog = {
+      id: uuidv4(),
+      timestamp: Date.now(),
+      type,
+      userId,
+      userName,
+      message,
+      metadata
+    };
+
+    if (!room.activityLogs) {
+      room.activityLogs = [];
+    }
+
+    room.activityLogs.unshift(log);
+
+    // Keep only last 50 logs
+    if (room.activityLogs.length > 50) {
+      room.activityLogs = room.activityLogs.slice(0, 50);
+    }
+
+    if (this.onActivityLogCallback) {
+      console.log(`[Service Debug] logActivity calling callback for room ${roomId}`);
+      this.onActivityLogCallback(roomId, log);
+    } else {
+      console.log(`[Service Debug] logActivity NO callback set for room ${roomId}`);
+    }
+  }
+
   private resetInactivityTimer(roomId: string) {
     this.stopInactivityTimer(roomId);
-    
+
     // Set timer for 1 hour (3600000 ms)
     const timer = setTimeout(() => {
       console.log(`[Auto-Close] Room ${roomId} closed due to 1 hour of inactivity.`);
       this.closeRoom(roomId);
-    }, 3600000); 
+    }, 3600000);
 
     this.inactivityTimers.set(roomId, timer);
   }
@@ -73,7 +118,7 @@ export class RoomsService {
 
     const currentTrackId = room.currentTrack.trackId;
     const remainingSeconds = (room.currentTrack.duration || 0) - room.playbackState.currentTime;
-    
+
     if (remainingSeconds <= 0) {
       this.triggerTrackEnd(roomId, currentTrackId);
       return;
@@ -103,7 +148,7 @@ export class RoomsService {
   createRoom(adminName: string, socketId: string): Room {
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
     const adminId = uuidv4();
-    
+
     const admin: User = {
       userId: adminId,
       socketId,
@@ -126,10 +171,12 @@ export class RoomsService {
         lastUpdated: Date.now(),
       },
       skipVotes: [],
+      activityLogs: [],
     };
 
     this.rooms.set(roomId, room);
     this.resetInactivityTimer(roomId);
+    this.logActivity(roomId, 'user_join', adminId, adminName, 'created the room');
     return room;
   }
 
@@ -157,6 +204,7 @@ export class RoomsService {
 
     room.users.push(user);
     this.resetInactivityTimer(roomId);
+    this.logActivity(roomId, 'user_join', user.userId, user.name, 'joined the room');
     return { room, user };
   }
 
@@ -165,17 +213,19 @@ export class RoomsService {
       const userIndex = room.users.findIndex((u) => u.socketId === socketId);
       if (userIndex !== -1) {
         const [user] = room.users.splice(userIndex, 1);
-        
+
+        this.logActivity(roomId, 'user_leave', user.userId, user.name, 'left the room');
+
         // Remove this user's hearts from all tracks in the queue
         room.queue.forEach(track => {
           track.hearts = track.hearts.filter(id => id !== user.userId);
         });
-        
+
         // Also remove heart from current track if it exists
         if (room.currentTrack) {
           room.currentTrack.hearts = room.currentTrack.hearts.filter(id => id !== user.userId);
         }
-        
+
         // Also remove from skipVotes
         room.skipVotes = room.skipVotes.filter(id => id !== user.userId);
 
@@ -199,16 +249,16 @@ export class RoomsService {
           room.users[0].role = 'admin';
           room.adminId = room.users[0].userId;
         }
-        
+
         // After someone leaves, check if the remaining skip votes meet the new threshold
         if (room.currentTrack) {
-            const activeVotes = room.skipVotes.filter(uid => 
-                room.users.some(u => u.userId === uid)
-            ).length;
-            const requiredVotes = Math.floor(room.users.length / 2) + 1;
-            if (activeVotes >= requiredVotes) {
-                this.nextTrack(roomId, room.currentTrack.trackId);
-            }
+          const activeVotes = room.skipVotes.filter(uid =>
+            room.users.some(u => u.userId === uid)
+          ).length;
+          const requiredVotes = Math.floor(room.users.length / 2) + 1;
+          if (activeVotes >= requiredVotes) {
+            this.nextTrack(roomId, room.currentTrack.trackId);
+          }
         }
 
         this.resetInactivityTimer(roomId);
@@ -246,10 +296,10 @@ export class RoomsService {
 
     return {
       ...room,
-      playbackState: { 
-        ...room.playbackState, 
+      playbackState: {
+        ...room.playbackState,
         currentTime: calculatedTime,
-        lastUpdated: now 
+        lastUpdated: now
       }
     };
   }
@@ -259,24 +309,27 @@ export class RoomsService {
       const response = await axios.get(`https://www.youtube.com/oembed?url=${url}&format=json`);
       const { title, thumbnail_url } = response.data;
       // oEmbed doesn't always provide duration, we'll use 0 or default
-      return { 
-        title: title || 'Unknown Title', 
-        thumbnail: thumbnail_url || '', 
-        duration: 0 
+      return {
+        title: title || 'Unknown Title',
+        thumbnail: thumbnail_url || '',
+        duration: 0
       };
     } catch (e) {
       const videoId = url.split('v=')[1]?.split('&')[0];
-      return { 
-        title: videoId ? `Video ${videoId}` : 'Invalid URL', 
-        thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '', 
-        duration: 0 
+      return {
+        title: videoId ? `Video ${videoId}` : 'Invalid URL',
+        thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '',
+        duration: 0
       };
     }
   }
 
-  async addTrack(roomId: string, youtubeUrl: string, userId: string, duration?: number): Promise<{ track: Track | null; error?: string }> {
+  async addTrack(roomId: string, youtubeUrl: string, userId: string, duration?: number, message?: string): Promise<{ track: Track | null; error?: string }> {
     const room = this.rooms.get(roomId);
     if (!room) return { track: null, error: 'ROOM_NOT_FOUND' };
+
+    const user = room.users.find(u => u.userId === userId);
+    const userName = user ? user.name : 'Unknown User';
 
     // 1. Check user track limit (max 4 tracks in queue)
     const userTrackCount = room.queue.filter(t => t.addedBy === userId).length;
@@ -285,7 +338,7 @@ export class RoomsService {
     }
 
     const metadata = await this.fetchYoutubeMetadata(youtubeUrl);
-    
+
     const newTrack: Track = {
       trackId: uuidv4(),
       youtubeUrl,
@@ -294,6 +347,7 @@ export class RoomsService {
       duration: duration || metadata.duration || 0, // Priority to client provided duration
       hearts: [],
       addedAt: Date.now(),
+      message, // Save the TTS message
     };
 
     if (!room.currentTrack) {
@@ -301,13 +355,14 @@ export class RoomsService {
       room.playbackState.isPlaying = true;
       room.playbackState.lastUpdated = Date.now();
       room.playbackState.currentTime = 0;
-      this.stopInactivityTimer(roomId); 
+      this.stopInactivityTimer(roomId);
       this.scheduleTrackEnd(roomId);
     } else {
       room.queue.push(newTrack);
       this.resetInactivityTimer(roomId); // Activity detected
     }
 
+    this.logActivity(roomId, 'track_add', userId, userName, `added "${newTrack.title}"`);
     return { track: newTrack };
   }
 
@@ -327,6 +382,7 @@ export class RoomsService {
     if (user.role === 'admin' || track.addedBy === userId) {
       room.queue.splice(trackIndex, 1);
       this.resetInactivityTimer(roomId);
+      this.logActivity(roomId, 'track_remove', userId, user.name, `removed "${track.title}" from queue`);
       return true;
     }
 
@@ -353,7 +409,7 @@ export class RoomsService {
       this.scheduleTrackEnd(roomId);
     } else {
       this.clearTrackTimer(roomId);
-      this.resetInactivityTimer(roomId); 
+      this.resetInactivityTimer(roomId);
     }
 
     return true;
@@ -380,6 +436,7 @@ export class RoomsService {
     const [movedTrack] = room.queue.splice(fromIndex, 1);
     room.queue.splice(toIndex, 0, movedTrack);
 
+    this.logActivity(roomId, 'queue_reorder', userId, user.name, 'reordered the queue');
     return true;
   }
   transferAdmin(roomId: string, currentAdminId: string, newAdminId: string): boolean {
@@ -396,10 +453,11 @@ export class RoomsService {
     currentAdmin.role = 'user';
     targetUser.role = 'admin';
     room.adminId = newAdminId;
-    
+
     // Also grant control to new admin if they didn't have it
     targetUser.canControl = true;
 
+    this.logActivity(roomId, 'admin_transfer', currentAdminId, currentAdmin.name, `promoted ${targetUser.name} to admin`);
     return true;
   }
 
@@ -411,6 +469,10 @@ export class RoomsService {
     if (!targetUser) return false;
 
     targetUser.canControl = canControl;
+    const requester = room.users.find(u => u.userId === requesterId);
+    if (requester) {
+      this.logActivity(roomId, 'permission_change', requesterId, requester.name, `${canControl ? 'granted' : 'revoked'} control for ${targetUser.name}`);
+    }
     return true;
   }
 
@@ -425,6 +487,10 @@ export class RoomsService {
     if (!targetUser) return false;
 
     targetUser.canPlay = true;
+    const requester = room.users.find(u => u.userId === requesterId);
+    if (requester) {
+      this.logActivity(roomId, 'permission_change', requesterId, requester.name, `set ${targetUser.name} as DJ`);
+    }
     return true;
   }
   nextTrack(roomId: string, fromTrackId?: string): Track | null {
@@ -464,7 +530,7 @@ export class RoomsService {
     }
 
     // Only count votes from users who are still in the room
-    const activeVotes = room.skipVotes.filter(uid => 
+    const activeVotes = room.skipVotes.filter(uid =>
       room.users.some(u => u.userId === uid)
     ).length;
 
@@ -472,6 +538,10 @@ export class RoomsService {
     const requiredVotes = Math.floor(totalUsers / 2) + 1;
 
     if (activeVotes >= requiredVotes) {
+      const user = room.users.find(u => u.userId === userId);
+      if (user) {
+        this.logActivity(roomId, 'track_skip', userId, user.name, 'voted to skip track');
+      }
       this.nextTrack(roomId, room.currentTrack.trackId);
       return { skipped: true, votes: activeVotes, required: requiredVotes };
     }
@@ -508,6 +578,12 @@ export class RoomsService {
       // If heart counts are equal, sort by addedAt (ascending - earlier first)
       return a.addedAt - b.addedAt;
     });
+
+    // Log heart
+    const user = room.users.find(u => u.userId === userId);
+    if (user && targetTrack) {
+      this.logActivity(roomId, 'track_heart', userId, user.name, `loved "${targetTrack.title}"`);
+    }
 
     return true;
   }

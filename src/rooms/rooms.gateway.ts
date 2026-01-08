@@ -9,7 +9,8 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { RoomsService } from './rooms.service';
-import { Track } from './types';
+import { Track, ActivityLog, ChatMessage } from './types';
+import { v4 as uuidv4 } from 'uuid';
 
 @WebSocketGateway({
   cors: {
@@ -23,6 +24,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   constructor(private readonly roomsService: RoomsService) {
+    console.log('[RoomsGateway] Chat Feature & Activity Log Ready!');
     this.roomsService.setTrackEndCallback((roomId) => {
       console.log(`[Event] Track transition confirmed for room ${roomId}`);
       // nextTrack was already called inside Service.triggerTrackEnd.
@@ -33,6 +35,11 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.roomsService.setRoomClosedCallback((roomId) => {
       this.server.to(roomId).emit('error', { message: 'Phòng đã bị đóng do không hoạt động trong 1 giờ.' });
       this.server.to(roomId).emit('room:closed');
+    });
+
+    this.roomsService.setActivityLogCallback((roomId, log) => {
+      console.log(`[Gateway] EMITTING activity:new to ${roomId} - LogID: ${log.id}`);
+      this.server.to(roomId).emit('activity:new', log);
     });
   }
 
@@ -58,7 +65,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const room = this.roomsService.createRoom(data.name, client.id);
     client.join(room.roomId);
-    
+
     // Use getRoom to get adjusted time state
     const adjustedRoom = this.roomsService.getRoom(room.roomId);
     const user = room.users.find(u => u.socketId === client.id);
@@ -83,7 +90,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const { room, user } = result;
     client.join(room.roomId);
-    
+
     // Use getRoom to get adjusted time state
     const adjustedRoom = this.roomsService.getRoom(room.roomId);
     client.emit('room:joined', { room: this.mapRoomForClient(adjustedRoom), user });
@@ -104,7 +111,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('queue:add')
   async handleAddTrack(
-    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string; duration?: number },
+    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string; duration?: number; message?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const { track, error } = await this.roomsService.addTrack(
@@ -112,8 +119,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       data.youtubeUrl,
       data.userId,
       data.duration,
+      data.message // Pass optional message
     );
-    
+
     if (track) {
       this.broadcastRoomUpdate(data.roomId);
     } else if (error === 'TRACK_LIMIT_REACHED') {
@@ -264,8 +272,23 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('room:reaction')
   handleReaction(
     @MessageBody() data: { roomId: string; emoji: string },
+    @ConnectedSocket() client: Socket,
   ) {
     this.server.to(data.roomId).emit('room:reaction', { emoji: data.emoji, id: Math.random() });
+
+    // Log reaction
+    const room = this.roomsService.getRoom(data.roomId);
+    if (room) {
+      const user = room.users.find(u => u.socketId === client.id);
+      console.log(`[Reaction Debug] Room: ${data.roomId}, Client: ${client.id}, UserFound: ${!!user}`);
+      if (user) {
+        this.roomsService.logActivity(data.roomId, 'reaction', user.userId, user.name, `reacted with ${data.emoji}`);
+      } else {
+        console.log(`[Reaction Debug] User not found in room users list:`, room.users.map(u => u.socketId));
+      }
+    } else {
+      console.log(`[Reaction Debug] Room not found: ${data.roomId}`);
+    }
   }
 
   @SubscribeMessage('room:sound-effect')
@@ -275,10 +298,24 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(data.roomId).emit('room:sound-effect', { effect: data.effect });
   }
 
+  @SubscribeMessage('chat:send')
+  handleChatSend(
+    @MessageBody() data: { roomId: string; content: string; userId: string; userName: string },
+  ) {
+    const message: ChatMessage = {
+      id: uuidv4(),
+      userId: data.userId,
+      userName: data.userName,
+      content: data.content,
+      timestamp: Date.now(),
+    };
+    this.server.to(data.roomId).emit('chat:receive', message);
+  }
+
   private broadcastRoomUpdate(roomId: string) {
     const room = this.roomsService.getRoom(roomId);
     if (room) {
-        this.server.to(roomId).emit('room:update', this.mapRoomForClient(room));
+      this.server.to(roomId).emit('room:update', this.mapRoomForClient(room));
     }
   }
 
