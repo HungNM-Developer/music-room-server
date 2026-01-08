@@ -16,19 +16,24 @@ exports.RoomsGateway = void 0;
 const websockets_1 = require("@nestjs/websockets");
 const socket_io_1 = require("socket.io");
 const rooms_service_1 = require("./rooms.service");
+const uuid_1 = require("uuid");
 let RoomsGateway = class RoomsGateway {
     roomsService;
     server;
     constructor(roomsService) {
         this.roomsService = roomsService;
+        console.log('[RoomsGateway] Chat Feature & Activity Log Ready!');
         this.roomsService.setTrackEndCallback((roomId) => {
-            console.log(`[Timer] Track ended automatically in room ${roomId}`);
-            this.roomsService.nextTrack(roomId);
+            console.log(`[Event] Track transition confirmed for room ${roomId}`);
             this.broadcastRoomUpdate(roomId);
         });
         this.roomsService.setRoomClosedCallback((roomId) => {
             this.server.to(roomId).emit('error', { message: 'Phòng đã bị đóng do không hoạt động trong 1 giờ.' });
             this.server.to(roomId).emit('room:closed');
+        });
+        this.roomsService.setActivityLogCallback((roomId, log) => {
+            console.log(`[Gateway] EMITTING activity:new to ${roomId} - LogID: ${log.id}`);
+            this.server.to(roomId).emit('activity:new', log);
         });
     }
     handleConnection(client) {
@@ -78,7 +83,7 @@ let RoomsGateway = class RoomsGateway {
         }
     }
     async handleAddTrack(data, client) {
-        const { track, error } = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId, data.duration);
+        const { track, error } = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId, data.duration, data.message);
         if (track) {
             this.broadcastRoomUpdate(data.roomId);
         }
@@ -144,7 +149,7 @@ let RoomsGateway = class RoomsGateway {
         }
     }
     handleTrackEnd(data) {
-        this.roomsService.nextTrack(data.roomId);
+        this.roomsService.nextTrack(data.roomId, data.trackId);
         this.broadcastRoomUpdate(data.roomId);
     }
     handleVoteSkip(data, client) {
@@ -165,11 +170,35 @@ let RoomsGateway = class RoomsGateway {
             client.emit('error', { message: 'Failed to heart track' });
         }
     }
-    handleReaction(data) {
+    handleReaction(data, client) {
         this.server.to(data.roomId).emit('room:reaction', { emoji: data.emoji, id: Math.random() });
+        const room = this.roomsService.getRoom(data.roomId);
+        if (room) {
+            const user = room.users.find(u => u.socketId === client.id);
+            console.log(`[Reaction Debug] Room: ${data.roomId}, Client: ${client.id}, UserFound: ${!!user}`);
+            if (user) {
+                this.roomsService.logActivity(data.roomId, 'reaction', user.userId, user.name, `reacted with ${data.emoji}`);
+            }
+            else {
+                console.log(`[Reaction Debug] User not found in room users list:`, room.users.map(u => u.socketId));
+            }
+        }
+        else {
+            console.log(`[Reaction Debug] Room not found: ${data.roomId}`);
+        }
     }
     handleSoundEffect(data) {
         this.server.to(data.roomId).emit('room:sound-effect', { effect: data.effect });
+    }
+    handleChatSend(data) {
+        const message = {
+            id: (0, uuid_1.v4)(),
+            userId: data.userId,
+            userName: data.userName,
+            content: data.content,
+            timestamp: Date.now(),
+        };
+        this.server.to(data.roomId).emit('chat:receive', message);
     }
     broadcastRoomUpdate(roomId) {
         const room = this.roomsService.getRoom(roomId);
@@ -294,8 +323,9 @@ __decorate([
 __decorate([
     (0, websockets_1.SubscribeMessage)('room:reaction'),
     __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleReaction", null);
 __decorate([
@@ -305,6 +335,13 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleSoundEffect", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('chat:send'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleChatSend", null);
 exports.RoomsGateway = RoomsGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {

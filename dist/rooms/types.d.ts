@@ -17,11 +17,28 @@ export interface Track {
     addedBy: string;
     hearts: string[];
     addedAt: number;
+    message?: string;
 }
 export interface PlaybackState {
     isPlaying: boolean;
     currentTime: number;
     lastUpdated: number;
+}
+export interface ActivityLog {
+    id: string;
+    timestamp: number;
+    type: 'user_join' | 'user_leave' | 'track_add' | 'track_remove' | 'track_skip' | 'track_heart' | 'admin_transfer' | 'permission_change' | 'reaction' | 'queue_reorder';
+    userId: string;
+    userName: string;
+    message: string;
+    metadata?: Record<string, any>;
+}
+export interface ChatMessage {
+    id: string;
+    userId: string;
+    userName: string;
+    content: string;
+    timestamp: number;
 }
 export interface Room {
     roomId: string;
@@ -31,6 +48,7 @@ export interface Room {
     currentTrack: Track | null;
     playbackState: PlaybackState;
     skipVotes: string[];
+    activityLogs: ActivityLog[];
 }
 export interface RoomStateUpdate extends Omit<Room, 'users'> {
     users: Omit<User, 'socketId'>[];

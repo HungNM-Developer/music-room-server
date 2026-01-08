@@ -19,12 +19,32 @@ export interface Track {
   addedBy: string; // userId
   hearts: string[]; // List of userIds who liked this track
   addedAt: number; // timestamp when added
+  message?: string; // Optional TTS message when track plays
 }
 
 export interface PlaybackState {
   isPlaying: boolean;
   currentTime: number; // last sync time in seconds
   lastUpdated: number; // timestamp of last update
+}
+
+export interface ActivityLog {
+  id: string;
+  timestamp: number;
+  type: 'user_join' | 'user_leave' | 'track_add' | 'track_remove' | 'track_skip' |
+  'track_heart' | 'admin_transfer' | 'permission_change' | 'reaction' | 'queue_reorder';
+  userId: string;
+  userName: string;
+  message: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  userName: string;
+  content: string;
+  timestamp: number;
 }
 
 export interface Room {
@@ -35,8 +55,9 @@ export interface Room {
   currentTrack: Track | null;
   playbackState: PlaybackState;
   skipVotes: string[]; // List of userIds who voted to skip current track
+  activityLogs: ActivityLog[];
 }
 
 export interface RoomStateUpdate extends Omit<Room, 'users'> {
-    users: Omit<User, 'socketId'>[];
+  users: Omit<User, 'socketId'>[];
 }

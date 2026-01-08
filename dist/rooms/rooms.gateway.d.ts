@@ -20,6 +20,7 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         youtubeUrl: string;
         userId: string;
         duration?: number;
+        message?: string;
     }, client: Socket): Promise<void>;
     handleRemoveTrack(data: {
         roomId: string;
@@ -56,6 +57,7 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
     }, client: Socket): void;
     handleTrackEnd(data: {
         roomId: string;
+        trackId?: string;
     }): void;
     handleVoteSkip(data: {
         roomId: string;
@@ -69,10 +71,16 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
     handleReaction(data: {
         roomId: string;
         emoji: string;
-    }): void;
+    }, client: Socket): void;
     handleSoundEffect(data: {
         roomId: string;
         effect: string;
+    }): void;
+    handleChatSend(data: {
+        roomId: string;
+        content: string;
+        userId: string;
+        userName: string;
     }): void;
     private broadcastRoomUpdate;
     private mapRoomForClient;
