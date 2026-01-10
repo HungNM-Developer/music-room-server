@@ -332,6 +332,8 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(data.roomId).emit('chat:receive', message);
   }
 
+  private djCooldowns = new Map<string, number>();
+
   private broadcastRoomUpdate(roomId: string) {
     const room = this.roomsService.getRoom(roomId);
     if (room) {
@@ -346,4 +348,52 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       users: room.users.map(({ socketId, ...u }) => u),
     };
   }
+
+  @SubscribeMessage('dj:toggle-permission')
+  handleToggleDjPermission(
+    @MessageBody() data: { roomId: string; targetUserId: string; canDj: boolean; adminId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = this.roomsService.getRoom(data.roomId);
+    if (!room || room.adminId !== data.adminId) {
+      client.emit('error', { message: 'Chỉ Admin mới có quyền cấp phép DJ.' });
+      return;
+    }
+
+    const success = this.roomsService.setDjPermission(data.roomId, data.targetUserId, data.canDj);
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    }
+  }
+
+  @SubscribeMessage('dj:trigger')
+  handleDjTrigger(
+    @MessageBody() data: { roomId: string; userId: string; soundType: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const room = this.roomsService.getRoom(data.roomId);
+    if (!room) return;
+
+    const user = room.users.find(u => u.userId === data.userId);
+    if (!user || (!user.canDj && room.adminId !== user.userId)) {
+      client.emit('error', { message: 'Bạn không có quyền DJ.' });
+      return;
+    }
+
+    // Cooldown check (1.5 seconds per user)
+    const cooldownKey = `${data.roomId}:${data.userId}`;
+    const now = Date.now();
+    const lastTrigger = this.djCooldowns.get(cooldownKey) || 0;
+    if (now - lastTrigger < 1500) {
+      return; // Silently ignore anti-spam
+    }
+
+    this.djCooldowns.set(cooldownKey, now);
+    this.server.to(data.roomId).emit('dj:event', { 
+      userId: data.userId, 
+      userName: user.name, 
+      soundType: data.soundType 
+    });
+  }
 }
+

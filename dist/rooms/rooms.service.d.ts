@@ -53,4 +53,5 @@ export declare class RoomsService {
     };
     heartTrack(roomId: string, trackId: string, userId: string): boolean;
     setTrackMessage(roomId: string, trackId: string, userId: string, message: string, voicePreset?: string): boolean;
+    setDjPermission(roomId: string, targetUserId: string, canDj: boolean): boolean;
 }

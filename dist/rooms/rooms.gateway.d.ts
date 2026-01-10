@@ -88,6 +88,18 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         userId: string;
         userName: string;
     }): void;
+    private djCooldowns;
     private broadcastRoomUpdate;
     private mapRoomForClient;
+    handleToggleDjPermission(data: {
+        roomId: string;
+        targetUserId: string;
+        canDj: boolean;
+        adminId: string;
+    }, client: Socket): void;
+    handleDjTrigger(data: {
+        roomId: string;
+        userId: string;
+        soundType: string;
+    }, client: Socket): void;
 }

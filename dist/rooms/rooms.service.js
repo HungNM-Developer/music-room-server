@@ -129,6 +129,7 @@ let RoomsService = class RoomsService {
             color: this.getRandomColor(),
             canPlay: true,
             canControl: true,
+            canDj: true,
         };
         const room = {
             roomId,
@@ -165,6 +166,7 @@ let RoomsService = class RoomsService {
             color: this.getRandomColor(),
             canPlay: false,
             canControl: false,
+            canDj: false,
         };
         room.users.push(user);
         this.resetInactivityTimer(roomId);
@@ -482,6 +484,16 @@ let RoomsService = class RoomsService {
             return false;
         track.message = message;
         track.voicePreset = voicePreset;
+        return true;
+    }
+    setDjPermission(roomId, targetUserId, canDj) {
+        const room = this.rooms.get(roomId);
+        if (!room)
+            return false;
+        const user = room.users.find(u => u.userId === targetUserId);
+        if (!user)
+            return false;
+        user.canDj = canDj;
         return true;
     }
 };

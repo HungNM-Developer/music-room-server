@@ -7,6 +7,7 @@ export interface User {
     color: string;
     canPlay: boolean;
     canControl: boolean;
+    canDj: boolean;
 }
 export interface Track {
     trackId: string;

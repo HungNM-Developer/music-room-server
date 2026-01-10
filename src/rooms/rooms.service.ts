@@ -157,6 +157,7 @@ export class RoomsService {
       color: this.getRandomColor(),
       canPlay: true,    // Admin is the default player
       canControl: true, // Admin can control everything
+      canDj: true,      // Admin can use DJ soundboard
     };
 
     const room: Room = {
@@ -200,6 +201,7 @@ export class RoomsService {
       color: this.getRandomColor(),
       canPlay: false,    // Default user cannot play
       canControl: false, // Default user cannot control
+      canDj: false,      // Default user cannot use DJ soundboard
     };
 
     room.users.push(user);
@@ -603,6 +605,18 @@ export class RoomsService {
     track.voicePreset = voicePreset;
     return true;
   }
+
+  setDjPermission(roomId: string, targetUserId: string, canDj: boolean): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const user = room.users.find(u => u.userId === targetUserId);
+    if (!user) return false;
+
+    user.canDj = canDj;
+    return true;
+  }
 }
+
 
 

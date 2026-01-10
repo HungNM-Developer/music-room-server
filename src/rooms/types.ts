@@ -8,7 +8,9 @@ export interface User {
   color: string; // Hex code for avatar background
   canPlay: boolean;    // Designated player/source of music
   canControl: boolean; // Permission to reorder/skip/pause
+  canDj: boolean;      // Permission to use DJ soundboard
 }
+
 
 export interface Track {
   trackId: string;

@@ -209,6 +209,7 @@ let RoomsGateway = class RoomsGateway {
         };
         this.server.to(data.roomId).emit('chat:receive', message);
     }
+    djCooldowns = new Map();
     broadcastRoomUpdate(roomId) {
         const room = this.roomsService.getRoom(roomId);
         if (room) {
@@ -220,6 +221,39 @@ let RoomsGateway = class RoomsGateway {
             ...room,
             users: room.users.map(({ socketId, ...u }) => u),
         };
+    }
+    handleToggleDjPermission(data, client) {
+        const room = this.roomsService.getRoom(data.roomId);
+        if (!room || room.adminId !== data.adminId) {
+            client.emit('error', { message: 'Chỉ Admin mới có quyền cấp phép DJ.' });
+            return;
+        }
+        const success = this.roomsService.setDjPermission(data.roomId, data.targetUserId, data.canDj);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+    }
+    handleDjTrigger(data, client) {
+        const room = this.roomsService.getRoom(data.roomId);
+        if (!room)
+            return;
+        const user = room.users.find(u => u.userId === data.userId);
+        if (!user || (!user.canDj && room.adminId !== user.userId)) {
+            client.emit('error', { message: 'Bạn không có quyền DJ.' });
+            return;
+        }
+        const cooldownKey = `${data.roomId}:${data.userId}`;
+        const now = Date.now();
+        const lastTrigger = this.djCooldowns.get(cooldownKey) || 0;
+        if (now - lastTrigger < 1500) {
+            return;
+        }
+        this.djCooldowns.set(cooldownKey, now);
+        this.server.to(data.roomId).emit('dj:event', {
+            userId: data.userId,
+            userName: user.name,
+            soundType: data.soundType
+        });
     }
 };
 exports.RoomsGateway = RoomsGateway;
@@ -359,6 +393,22 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], RoomsGateway.prototype, "handleChatSend", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('dj:toggle-permission'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleToggleDjPermission", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('dj:trigger'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleDjTrigger", null);
 exports.RoomsGateway = RoomsGateway = __decorate([
     (0, websockets_1.WebSocketGateway)({
         cors: {
