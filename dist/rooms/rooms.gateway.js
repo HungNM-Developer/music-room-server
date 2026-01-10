@@ -83,7 +83,7 @@ let RoomsGateway = class RoomsGateway {
         }
     }
     async handleAddTrack(data, client) {
-        const { track, error } = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId, data.duration, data.message);
+        const { track, error } = await this.roomsService.addTrack(data.roomId, data.youtubeUrl, data.userId, data.duration);
         if (track) {
             this.broadcastRoomUpdate(data.roomId);
         }
@@ -92,6 +92,15 @@ let RoomsGateway = class RoomsGateway {
         }
         else {
             client.emit('error', { message: 'Không thể thêm bài hát. Vui lòng thử lại.' });
+        }
+    }
+    handleSetTrackMessage(data, client) {
+        const success = this.roomsService.setTrackMessage(data.roomId, data.trackId, data.userId, data.message, data.voicePreset);
+        if (success) {
+            this.broadcastRoomUpdate(data.roomId);
+        }
+        else {
+            client.emit('error', { message: 'Không thể gửi lời chúc. Có lỗi xảy ra.' });
         }
     }
     handleRemoveTrack(data, client) {
@@ -249,6 +258,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
     __metadata("design:returntype", Promise)
 ], RoomsGateway.prototype, "handleAddTrack", null);
+__decorate([
+    (0, websockets_1.SubscribeMessage)('queue:set-message'),
+    __param(0, (0, websockets_1.MessageBody)()),
+    __param(1, (0, websockets_1.ConnectedSocket)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, socket_io_1.Socket]),
+    __metadata("design:returntype", void 0)
+], RoomsGateway.prototype, "handleSetTrackMessage", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)('queue:remove'),
     __param(0, (0, websockets_1.MessageBody)()),

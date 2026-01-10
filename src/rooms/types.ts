@@ -20,7 +20,9 @@ export interface Track {
   hearts: string[]; // List of userIds who liked this track
   addedAt: number; // timestamp when added
   message?: string; // Optional TTS message when track plays
+  voicePreset?: string; // Optional voice preset for TTS (normal, robot, chipmunk, etc.)
 }
+
 
 export interface PlaybackState {
   isPlaying: boolean;

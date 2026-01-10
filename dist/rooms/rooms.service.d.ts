@@ -52,4 +52,5 @@ export declare class RoomsService {
         required: number;
     };
     heartTrack(roomId: string, trackId: string, userId: string): boolean;
+    setTrackMessage(roomId: string, trackId: string, userId: string, message: string, voicePreset?: string): boolean;
 }

@@ -471,6 +471,19 @@ let RoomsService = class RoomsService {
         }
         return true;
     }
+    setTrackMessage(roomId, trackId, userId, message, voicePreset) {
+        const room = this.rooms.get(roomId);
+        if (!room)
+            return false;
+        const track = room.queue.find(t => t.trackId === trackId);
+        if (!track)
+            return false;
+        if (track.addedBy !== userId)
+            return false;
+        track.message = message;
+        track.voicePreset = voicePreset;
+        return true;
+    }
 };
 exports.RoomsService = RoomsService;
 exports.RoomsService = RoomsService = __decorate([

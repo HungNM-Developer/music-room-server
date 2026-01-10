@@ -587,4 +587,22 @@ export class RoomsService {
 
     return true;
   }
+
+  setTrackMessage(roomId: string, trackId: string, userId: string, message: string, voicePreset?: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // Find the track in the queue
+    const track = room.queue.find(t => t.trackId === trackId);
+    if (!track) return false;
+
+    // Only allow the person who added the track to set the message
+    if (track.addedBy !== userId) return false;
+
+    track.message = message;
+    track.voicePreset = voicePreset;
+    return true;
+  }
 }
+
+

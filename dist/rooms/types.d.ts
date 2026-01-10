@@ -18,6 +18,7 @@ export interface Track {
     hearts: string[];
     addedAt: number;
     message?: string;
+    voicePreset?: string;
 }
 export interface PlaybackState {
     isPlaying: boolean;

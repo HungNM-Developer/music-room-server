@@ -111,15 +111,14 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('queue:add')
   async handleAddTrack(
-    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string; duration?: number; message?: string },
+    @MessageBody() data: { roomId: string; youtubeUrl: string; userId: string; duration?: number },
     @ConnectedSocket() client: Socket,
   ) {
     const { track, error } = await this.roomsService.addTrack(
       data.roomId,
       data.youtubeUrl,
       data.userId,
-      data.duration,
-      data.message // Pass optional message
+      data.duration
     );
 
     if (track) {
@@ -131,7 +130,28 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('queue:set-message')
+  handleSetTrackMessage(
+    @MessageBody() data: { roomId: string; trackId: string; userId: string; message: string; voicePreset?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const success = this.roomsService.setTrackMessage(
+      data.roomId,
+      data.trackId,
+      data.userId,
+      data.message,
+      data.voicePreset
+    );
+    if (success) {
+      this.broadcastRoomUpdate(data.roomId);
+    } else {
+      client.emit('error', { message: 'Không thể gửi lời chúc. Có lỗi xảy ra.' });
+    }
+  }
+
+
   @SubscribeMessage('queue:remove')
+
   handleRemoveTrack(
     @MessageBody() data: { roomId: string; trackId: string; userId: string },
     @ConnectedSocket() client: Socket,

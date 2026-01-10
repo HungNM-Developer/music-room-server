@@ -20,8 +20,14 @@ export declare class RoomsGateway implements OnGatewayConnection, OnGatewayDisco
         youtubeUrl: string;
         userId: string;
         duration?: number;
-        message?: string;
     }, client: Socket): Promise<void>;
+    handleSetTrackMessage(data: {
+        roomId: string;
+        trackId: string;
+        userId: string;
+        message: string;
+        voicePreset?: string;
+    }, client: Socket): void;
     handleRemoveTrack(data: {
         roomId: string;
         trackId: string;
