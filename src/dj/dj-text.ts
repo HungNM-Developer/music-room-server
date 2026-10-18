@@ -26,6 +26,39 @@ const GUIDE: Record<GuideTarget, string> = {
   add: 'Gõ tên bài vào ô Thêm bài là thêm được ngay.',
   myItem: 'Bài của bạn nằm trong hàng chờ.',
   block: 'Quản trị viên chặn bài bằng nút Tùy chọn cạnh bài.',
+  whereMusic:
+    'Cả phòng nghe chung một luồng nhạc trên máy phát của phòng; bài đang phát nằm ở đầu trang.',
+  control:
+    'Người có quyền điều khiển tạm dừng, phát tiếp hoặc chuyển bài ngay bằng các nút cạnh bài đang phát.',
+  queue:
+    'Hàng chờ là các bài sắp phát: thả tim để bài lên sớm hơn, bài của bạn gỡ được trong Tùy chọn của bài.',
+  wish: 'Bấm biểu tượng lời chúc cạnh một bài để thêm bài kèm lời nhắn; lời chúc hiện trên loa khi bài phát.',
+  itemMenu:
+    'Bấm Tùy chọn (⋯) cạnh bài trong hàng chờ: gỡ bài của bạn, ghim bài phát tiếp (quyền điều khiển), chặn bài (quản trị viên).',
+  suggestions: 'Mục Gợi ý tiếp theo có bài hợp với phòng; bấm Thêm là xong.',
+  playlist:
+    'Mở Thêm bài: dán link playlist YouTube, hoặc vào tab Của tôi để dùng playlist của bạn.',
+  played:
+    'Tab Đã phát trong Thêm bài có các bài phòng đã phát, thêm lại bằng một chạm.',
+  chat: 'Khung Trò chuyện nhắn cho cả phòng; tin nhắn cũng hiện trên loa.',
+  reactions:
+    'Bấm một cảm xúc dưới khung trò chuyện: nó bay lên trên màn hình mọi người và trên loa.',
+  djPads:
+    'Bàn DJ dưới khung trò chuyện phát hiệu ứng âm thanh trên loa (người có quyền DJ).',
+  djMention:
+    'Gõ @DJ rồi nói điều bạn muốn trong khung trò chuyện, ví dụ "@DJ chọn 3 bài của Sơn Tùng".',
+  members: 'Tab Mọi người cho biết ai đang ở trong phòng.',
+  permissions:
+    'Quản trị viên bấm vào một người trong tab Mọi người để cấp quyền điều khiển, DJ hoặc làm máy phát.',
+  recap: 'Tab Mọi người có Tổng kết: bài được nghe nhiều, ai chọn nhiều bài.',
+  settings:
+    'Quản trị viên mở Cài đặt phòng trong tab Mọi người để đổi tên phòng, giới hạn bài…',
+  history:
+    'Bấm nút Lịch sử ở đầu trang để xem ai đã thêm, bỏ qua hay chặn bài nào.',
+  theme: 'Bấm nút Giao diện ở đầu trang để chọn giao diện cho máy của bạn.',
+  lang: 'Đổi Tiếng Việt / English trong tab Mọi người.',
+  leave: 'Bấm nút Rời phòng ở đầu trang; vào lại bằng link hoặc mã phòng.',
+  host: 'Máy nối với loa mở trang máy phát của phòng để phát nhạc cho cả phòng.',
 };
 
 function minutes(sec: number): number {
@@ -117,8 +150,11 @@ export function stepText(s: DjStep): string {
       case 'suggest':
         return `Gợi ý bài${by(s)}: ${list(s.tracks, 10)}`;
       case 'save':
+        if (!s.track && s.added) return `Đã lưu ${s.added} bài vào bài đã lưu`;
         return `Đã lưu ${song} vào bài đã lưu`;
       case 'playlistSave':
+        if (!s.track && s.added)
+          return `Đã lưu ${s.added} bài vào playlist "${s.playlist?.name ?? ''}"${s.playlist?.created ? ' (playlist mới)' : ''}`;
         return `Đã lưu ${song} vào playlist "${s.playlist?.name ?? ''}"${s.playlist?.created ? ' (playlist mới)' : ''}`;
       case 'playlistCreate':
         return `Đã ${s.playlist?.created ? 'tạo' : 'cập nhật'} playlist "${s.playlist?.name ?? ''}"${s.added ? `, thêm ${s.added} bài${by(s)}` : ''}`;

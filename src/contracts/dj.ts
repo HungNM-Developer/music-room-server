@@ -20,6 +20,28 @@ export const GUIDE_TARGETS = [
   'add',
   'myItem',
   'block',
+  // Items of the room's "Hướng dẫn" sheet (help ids): how-to questions light them up.
+  'whereMusic',
+  'control',
+  'queue',
+  'wish',
+  'itemMenu',
+  'suggestions',
+  'playlist',
+  'played',
+  'chat',
+  'reactions',
+  'djPads',
+  'djMention',
+  'members',
+  'permissions',
+  'recap',
+  'settings',
+  'history',
+  'theme',
+  'lang',
+  'leave',
+  'host',
 ] as const;
 export type GuideTarget = (typeof GUIDE_TARGETS)[number];
 

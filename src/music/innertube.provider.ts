@@ -288,7 +288,11 @@ export class InnerTubeProvider {
   }
 }
 
-/** Two names share a word of 2+ letters (accents and case aside): "Jack - J97" / "j97". */
+/**
+ * Two names share a word of 2+ letters (accents and case aside): "Jack - J97" / "j97". A typo
+ * counts as the same word ("ryhder" / "RHYDER"): YouTube Music corrects it, the check must too.
+ * Short words must match exactly ("den" is not "dan").
+ */
 function sharesWord(a: string, b: string): boolean {
   const ws = (t: string) =>
     new Set(
@@ -300,8 +304,38 @@ function sharesWord(a: string, b: string): boolean {
         .split(/[^\p{L}\p{N}]+/u)
         .filter((w) => w.length >= 2),
     );
-  const x = ws(a);
-  return [...ws(b)].some((w) => x.has(w));
+  const x = [...ws(a)];
+  return [...ws(b)].some((w) => x.some((v) => v === w || typoOf(v, w)));
+}
+
+/** Letters swapped, missing, extra or wrong: 1 for words of 4–6 letters, 2 from 7 letters. */
+function typoOf(a: string, b: string): boolean {
+  const len = Math.min(a.length, b.length);
+  const max = len >= 7 ? 2 : len >= 4 ? 1 : 0;
+  return (
+    max > 0 && Math.abs(a.length - b.length) <= max && editDistance(a, b) <= max
+  );
+}
+
+/** Optimal string alignment distance (Levenshtein plus swapping two neighbours). */
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [
+    i,
+    ...Array<number>(b.length).fill(0),
+  ]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + cost,
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  return d[a.length][b.length];
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {

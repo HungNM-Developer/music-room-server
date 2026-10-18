@@ -8,6 +8,7 @@ import {
   type ErrorCode,
   normalizeQuery,
   type QueueItemView,
+  type TrackSummary,
 } from '../contracts';
 import type { Member } from '../generated/prisma/client';
 import { LibraryService } from '../library/library.service';
@@ -230,9 +231,9 @@ export class DjComboService {
       case 'replaceWith':
         return this.replaceWith(run, s.target, s.find);
       case 'save':
-        return this.save(run);
+        return s.target ? this.saveQueue(run, s.target) : this.save(run);
       case 'playlistSave':
-        return this.playlistSave(run, s.playlist);
+        return this.playlistSave(run, s.playlist, s.target);
       case 'playlistCreate':
         return this.playlistCreate(run, s.name, s.find, s.count ?? 1);
       case 'playlistPlay':
@@ -463,7 +464,61 @@ export class DjComboService {
   }
 
   /** "Lưu bài này vào playlist X": X is made when the asker has none by that name. */
-  private async playlistSave(run: Run, name: string): Promise<void> {
+  /** The songs a save means: the target's queue songs, else the song on air. Pushes "none". */
+  private async toSave(
+    run: Run,
+    action: 'save' | 'playlistSave',
+    target?: Target,
+  ): Promise<TrackSummary[] | null> {
+    if (target) {
+      const { items } = await this.targets(run, target);
+      if (!items.length) {
+        run.steps.push({
+          action,
+          ok: false,
+          reason: 'notFound',
+          ...this.said(target),
+        });
+        return null;
+      }
+      return items.map((q) => q.track);
+    }
+    const np = (await this.snapshots.build(run.actor.roomId))?.nowPlaying;
+    if (!np) {
+      run.steps.push({ action, ok: false, reason: 'nothingPlaying' });
+      return null;
+    }
+    return [np.item.track];
+  }
+
+  /** "Lưu tất cả bài trong hàng chờ": each queue song into the asker's saved songs. */
+  private async saveQueue(run: Run, target: Target): Promise<void> {
+    const tracks = await this.toSave(run, 'save', target);
+    if (!tracks) return;
+    let saved = 0;
+    for (const t of tracks)
+      try {
+        await this.library.setFavorite(run.actor, t.id, true);
+        saved++;
+      } catch (e) {
+        run.steps.push({ ...failed('save', e), track: t });
+      }
+    if (saved)
+      run.steps.push({
+        action: 'save',
+        ok: true,
+        ...(tracks.length === 1 ? { track: tracks[0] } : {}),
+        added: saved,
+        total: tracks.length,
+      });
+  }
+
+  /** "Lưu bài này / các bài trong hàng chờ vào playlist X": X is made when the asker has none. */
+  private async playlistSave(
+    run: Run,
+    name: string,
+    target?: Target,
+  ): Promise<void> {
     const userId = this.userOf(run);
     if (!userId) {
       run.steps.push({
@@ -473,38 +528,39 @@ export class DjComboService {
       });
       return;
     }
-    const np = (await this.snapshots.build(run.actor.roomId))?.nowPlaying;
-    if (!np) {
-      run.steps.push({
-        action: 'playlistSave',
-        ok: false,
-        reason: 'nothingPlaying',
-      });
-      return;
-    }
-    const track = np.item.track;
+    const tracks = await this.toSave(run, 'playlistSave', target);
+    if (!tracks) return;
+    const one = tracks.length === 1 ? { track: tracks[0] } : {};
+    const counts = target ? { added: tracks.length, total: tracks.length } : {};
     try {
       const found = await this.findPlaylist(run, 'playlistSave', userId, name);
       if (found === null) return;
       if (found === 'none') {
-        const id = await this.playlists.create(userId, name, [track.id]);
+        const id = await this.playlists.create(
+          userId,
+          name,
+          tracks.map((t) => t.id),
+        );
         run.steps.push({
           action: 'playlistSave',
           ok: true,
-          track,
+          ...one,
+          ...counts,
           playlist: { id, name, created: true },
         });
         return;
       }
-      await this.playlists.setTrack(userId, found.id, track.id, true);
+      for (const t of tracks)
+        await this.playlists.setTrack(userId, found.id, t.id, true);
       run.steps.push({
         action: 'playlistSave',
         ok: true,
-        track,
+        ...one,
+        ...counts,
         playlist: { ...found, created: false },
       });
     } catch (e) {
-      run.steps.push({ ...failed('playlistSave', e), track });
+      run.steps.push({ ...failed('playlistSave', e), ...one });
     }
   }
 

@@ -188,12 +188,36 @@ const INTO_QUEUE = / vao (hang cho|danh sach( phat)?|list|queue|playlist)$/;
 
 /** How-to phrases (the DJ shows the button) in plain form, most specific first. */
 const GUIDES: [GuideTarget, RegExp][] = [
+  ['wish', /(^| )(loi chuc|gui loi|tang bai|wish)( |$)/],
+  ['playlist', /(^| )(playlist|danh sach phat)( |$)/],
+  ['itemMenu', /(^| )(ghim|uu tien|go bai|xoa bai|bo bai|pin)( |$)/],
+  ['theme', /(^| )(theme|giao dien|chu de|doi mau|hinh nen)( |$)/],
+  ['history', /(^| )(lich su|history)( |$)/],
+  [
+    'settings',
+    /(^| )(cai dat|setting|settings|gioi han bai|doi ten phong|xoa phong)( |$)/,
+  ],
+  ['recap', /(^| )(tong ket|tom tat|recap)( |$)/],
+  ['permissions', /(^| )(cap quyen|quyen|permissions?)( |$)/],
+  [
+    'members',
+    /(^| )(thanh vien|nguoi trong phong|ai dang trong phong|members?)( |$)/,
+  ],
+  ['lang', /(^| )(ngon ngu|tieng anh|english|language)( |$)/],
+  ['leave', /(^| )(roi phong|thoat phong|ra khoi phong|leave)( |$)/],
+  ['reactions', /(^| )(cam xuc|emoji|reactions?)( |$)/],
+  ['djPads', /(^| )(ban dj|hieu ung am thanh|pads?)( |$)/],
+  ['djMention', /(^| )(goi dj|hoi dj|dung dj|nho dj)( |$)/],
+  ['host', /(^| )(may phat|trang may phat|loa|tv|man hinh loa|host)( |$)/],
   // "chặn bài" only with its accent: "chán bài này" (bored of it) is the same without.
   ['block', /(^| )(chan( mot| 1)? bai|block)( |$)/],
   ['lyrics', /(^| )(loi bai hat|loi bai|xem loi|lyrics?)( |$)/],
   ['listen', /(^| )(nghe cung|listen along)( |$)/],
   ['mini', /(^| )(thu nho|man hinh nho|mini player|mini|pip)( |$)/],
-  ['share', /(^| )(chia se|share|invite|qr|ma qr|ma phong|link phong)( |$)/],
+  [
+    'share',
+    /(^| )(chia se|share|invite|qr|ma qr|ma phong|link phong|moi (nguoi khac|ban|dong nghiep|vao phong))( |$)/,
+  ],
   ['pause', /(^| )(tam dung|dung nhac|tat nhac|phat tiep|pause|resume)( |$)/],
   ['heart', /(^| )(tha tim|like bai|like|heart)( |$)/],
   ['save', /(^| )(luu|save|yeu thich|favorite|favourite)( |$)/],
@@ -201,6 +225,12 @@ const GUIDES: [GuideTarget, RegExp][] = [
     'skip',
     /(^| )(skip|bo qua|qua bai|next|chuyen bai|bai tiep|bai tiep theo)( |$)/,
   ],
+  // The general ones last: "thêm bài vào playlist" is about playlists, not adding.
+  ['played', /(^| )(bai da phat|vua phat|da phat)( |$)/],
+  ['suggestions', /(^| )(goi y)( |$)/],
+  ['chat', /(^| )(nhan tin|chat|tro chuyen)( |$)/],
+  ['add', /(^| )(them bai|tim bai|add)( |$)/],
+  ['queue', /(^| )(hang cho|queue)( |$)/],
 ];
 
 const INFOS: [InfoKind, RegExp][] = [
@@ -228,7 +258,7 @@ const INFOS: [InfoKind, RegExp][] = [
 
 /** A task word anywhere in the request. */
 const ACTION_INSIDE =
-  /(^| )(go|go bo|xoa|tha tim|ghim|skip|bo qua|chuyen|uu tien|tam dung|them|bat|xep|don)( |$)/;
+  /(^| )(go|go bo|xoa|tha tim|ghim|skip|bo qua|chuyen|uu tien|tam dung|them|bat|xep|don|luu|save|tao|phat|mo|doi|cho nghe|add|remove|play)( |$)/;
 
 const SIMILAR = /(^| )(giong|tuong tu|na na|nhu bai|similar|like this)( |$)/;
 const SIMILAR_ACCENTED =
@@ -375,13 +405,36 @@ const QUICK_RESUME =
 const QUICK_SAVE = /^(luu|save)( (bai nay|bai dang phat|lai|bai))?$/;
 /** A question about how to do something ("làm sao…", "ở đâu", "how"). */
 const HOW =
-  /(^| )(lam sao|lam the nao|lam cach nao|cach|o dau|cho nao|nut nao|how( do| to| can)?)( |$)/;
+  /(^| )(lam sao|lam the nao|lam cach nao|nhu the nao|the nao|cach nao|cach|o dau|cho nao|bam dau|bam vao dau|nut nao|nut gi|la gi|dung sao|how( do| to| can)?|where)( |$)/;
+
+/**
+ * "Làm sao để skip?", "lưu bài ở đâu": a how-to question. The DJ never carries these out, it
+ * shows where the button is (spotlight).
+ */
+export function isHowQuestion(request: string): boolean {
+  return HOW.test(plain(request));
+}
+
+/** The help topic of a how-to question, from its words (null: the AI decides). */
+export function howTopic(request: string): GuideTarget | null {
+  const original = request.trim();
+  const p = plain(original);
+  for (const [guide, re] of GUIDES)
+    if (re.test(p) && (guide !== 'block' || /chặn|block/i.test(original)))
+      return guide;
+  return null;
+}
 
 /**
  * The short, certain requests the DJ handles without the AI: every word must belong to the
  * pattern (polite words aside). Anything left over goes to the AI translator: never a guess.
  */
 export function matchQuick(request: string): QuickMatch | null {
+  // A how-to question is answered by showing the button, never by doing it.
+  if (isHowQuestion(request)) {
+    const guide = howTopic(request);
+    return guide ? { kind: 'guide', guide } : null;
+  }
   const original = request.trim().replace(/[?!.。…]+$/, '');
   let p = plain(original);
   if (!p) return { kind: 'hello' };

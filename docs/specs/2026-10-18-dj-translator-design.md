@@ -306,3 +306,10 @@ Của tôi (người dùng kiểm khi đọc):
 - Gợi ý tối thiểu 3 bài. "mood" luôn kèm tên bài do AI nêu (kiểm chứng trên YouTube Music); thiếu thì tìm "nhạc <tâm trạng>", bỏ video tổng hợp / mix / "top…" / không lời.
 - Không có AI: câu không liên quan trả "chưa giúp được" (không phân biệt được chuyện phiếm khi không có AI); câu xoá không bao giờ chạy.
 - Bước "noPlaylist" có `options` (tên playlist gần đúng) để DJ hỏi lại.
+
+## Đổi sau khi ra mắt (2026-10-18, người dùng chọn)
+
+- Câu hỏi cách dùng ("làm sao…", "ở đâu", "bấm đâu"…) không bao giờ được làm: DJ chỉ đúng mục của "Hướng dẫn" (spotlight "Chỉ cho tôi"). `GuideTarget` thêm các mục Hướng dẫn (contracts `2026-10-18.6`).
+- Việc đơn đúng một nút của Hướng dẫn (bỏ qua 1 bài, tạm dừng / phát tiếp, lưu bài đang phát, thả tim / gỡ / ghim một bài) → chỉ nút, không làm. Nhiều việc, bỏ qua nhiều bài, tìm và thêm bài, nhiều bài một lúc, playlist, "phát ngay bài X" vẫn do DJ làm.
+- Tên ca sĩ chấp nhận lỗi gõ nhỏ ("ryhder" → RHYDER); tìm theo ca sĩ cần một nghệ sĩ được ghi công trùng tên ("Wave Rhyder" không phải RHYDER).
+- "Lưu" nhận cả bài trong hàng chờ (vào bài đã lưu hoặc một playlist).
