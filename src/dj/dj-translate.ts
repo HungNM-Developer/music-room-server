@@ -17,6 +17,7 @@ import {
   strs,
   type Target,
 } from './dj-plan';
+import type { RoomContext } from './dj-interpret';
 
 /**
  * The AI as a translator (spec 2026-10-18-dj-translator): one "@DJ" sentence → a fixed frame of
@@ -24,7 +25,8 @@ import {
  * acts: the server resolves names, finds songs and does each step as the asker.
  */
 export const TRANSLATE_SYSTEM = `Bạn dịch câu chat gửi "@DJ" trong phòng nghe nhạc chung (văn phòng Việt Nam) thành JSON hành động. Không chọn bài thay người dùng, không bịa tên bài: chỉ ghi đúng điều họ muốn. Server tự tra YouTube và hàng chờ.
-Đầu vào: "asker" = người hỏi, "members" = tên người trong phòng, "text" = câu.
+Đầu vào: "asker" = người hỏi, "members" = tên người trong phòng, "nowPlaying" = bài đang phát, "queue" = hàng chờ theo thứ tự phát ("n": 1 = bài kế tiếp), "text" = câu.
+Dùng "nowPlaying" / "queue" để hiểu "bài này / bài đang phát", "bài đó", "bài số 3", "bài của Lan", tên bài viết tắt hay gõ sai: khi chỉ một bài trong hàng chờ, ghi đúng tên bài trong "queue" vào "titles" (hoặc "positions"). "bỏ / gỡ bài đang phát" = {"do":"skip"}. Không bịa bài không có trong "queue".
 "của X": X là một member → người chọn bài (scope "member"); không phải member → ca sĩ ("artist"). "của tôi/mình/em" → scope "mine".
 Trả {"steps":[...]} theo thứ tự người nói. Mỗi bước là một trong:
 {"do":"add","find":F,"count":n,"pin"?:"next"|"now","wish"?:"lời chúc"}   thêm bài vào hàng chờ ("thêm", "bật", "mở", "cho", "phát bài")
@@ -36,23 +38,26 @@ Trả {"steps":[...]} theo thứ tự người nói. Mỗi bước là một tro
 {"do":"playlistSave","playlist":"tên","target"?:T}   lưu vào playlist: bài đang phát, hoặc các bài trong hàng chờ (target)
 {"do":"playlistCreate","name":"tên","find"?:F,"count"?:n}   tạo playlist (có thể kèm bài)
 {"do":"playlistPlay","playlist":"tên"}   đưa cả playlist vào hàng chờ
-{"do":"info","about":"now"|"who_picked"|"when_mine"|"queue"|"mine"}   hỏi về phòng
+{"do":"info","about":"now"|"next"|"who_picked"|"when_mine"|"queue"|"mine"}   hỏi về phòng ("next" = bài kế tiếp là bài gì)
 {"do":"guide","topic":${GUIDE_TARGETS.map((g) => `"${g}"`).join('|')}}   hỏi CÁCH dùng ("làm sao", "ở đâu")
 {"do":"clarify","about":"removeScope"|"whichSong"|"whichPlaylist"}   câu mơ hồ (xoá mà không rõ bài nào…)
 {"do":"chat","reply":"..."}   chào hỏi / không liên quan tới nhạc
-F = {"titles"?:["tên bài họ nêu"],"artist"?:"ca sĩ","mode"?:"top"|"latest"|"popular"|"similar_now"|"mood","mood"?:"tâm trạng/thể loại","picks"?:[{"artist","song"}],"exclude"?:{"titles"?:[...],"artist"?:"..."}}
+F = {"titles"?:["tên bài họ nêu"],"artist"?:"ca sĩ","mode"?:"top"|"latest"|"popular"|"similar_now"|"mood","mood"?:"tâm trạng/thể loại","picks"?:[{"artist","song"}],"exclude"?:{"titles"?:[...],"artist"?:"..."},"source"?:"saved"|"played"}
+  "source": "saved" = bài người hỏi đã lưu, "played" = bài phòng vừa phát ("bật lại", "thêm lại").
   "latest" = mới nhất / vừa ra; "popular" = hot / trending; "similar_now" = giống bài đang phát; "mood" = theo tâm trạng / thể loại ("chill", "buồn", "lofi", "nhạc Hàn"…): LUÔN đặt "mode":"mood" và "picks" 5 bài CÓ THẬT, nổi tiếng, đúng ca sĩ gốc (câu tiếng Việt thì ưu tiên nhạc Việt). "đừng thêm X" → "exclude".
 T = {"scope":"all"|"mine"|"others"|"member","member"?:"tên","artist"?:"...","titles"?:[...],"positions"?:[1 = bài kế, -1 = bài cuối],"first"?:n,"last"?:n,"keep"?:{"artist"?:"...","titles"?:[...],"member"?:"..."}}
   "chừa", "giữ lại", "trừ", "ngoại trừ", "để lại" → "keep". "N bài cuối" → "last":N; "bài cuối" → "positions":[-1].
 count: thêm mặc định 1, gợi ý mặc định 3; "vài/mấy" = 3; "nhiều" = 5; xin hơn 5 thì ghi đúng số xin.
 "reply" (chỉ với "chat"): MỘT câu ngắn (dưới 160 ký tự), hài hước, thân thiện, hợp văn phòng, cùng ngôn ngữ với "text", mỗi lần một kiểu khác nhau, có thể lái về âm nhạc. Không chính trị, tôn giáo, tình dục, xúc phạm, không lời khuyên y tế / tài chính.`;
 
-export function translateInput(
-  asker: string,
-  members: string[],
-  text: string,
-): string {
-  return JSON.stringify({ asker, members, text });
+export function translateInput(room: RoomContext, text: string): string {
+  return JSON.stringify({
+    asker: room.asker,
+    members: room.members,
+    nowPlaying: room.nowPlaying,
+    queue: room.queue.map((q, i) => ({ n: i + 1, ...q })),
+    text,
+  });
 }
 
 export type Translation =
@@ -72,7 +77,7 @@ const INFO_OF: Record<string, InfoKind> = {
   now: 'nowPlaying',
   who_picked: 'whoPicked',
   when_mine: 'myNext',
-  next: 'myNext',
+  next: 'nextSong',
   queue: 'queueLength',
   mine: 'myCount',
 };
@@ -223,6 +228,18 @@ export function parseTranslation(raw: unknown): Translation {
     switch (s.do) {
       case 'add':
       case 'suggest': {
+        // "Thêm mấy bài tôi đã lưu", "bật lại 3 bài vừa phát": from the asker's library.
+        const source = obj(s.find)?.source;
+        if (s.do === 'add' && (source === 'saved' || source === 'played')) {
+          out.push({
+            do: 'addFrom',
+            source,
+            count: int(s.count, MAX_SONGS) ?? 1,
+            ...(pin ? { pin } : {}),
+            ...asked,
+          });
+          break;
+        }
         const find = findIn(s.find);
         if (!find) break;
         const asked1 = int(s.count, MAX_SONGS);

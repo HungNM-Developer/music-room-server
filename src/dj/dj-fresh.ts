@@ -10,11 +10,9 @@ const MIN_SEC = 60;
 const MAX_SEC = 600;
 const LOOK_AT = 20;
 /** Titles that are not the song itself. */
+// "Album TAM THÁI TỬ - Track No.4" is a song of an album: only "full album" is not one.
 const NOT_A_SONG =
-  /\b(reaction|react|live|full album|album|tong hop|playlist|karaoke|cover|lyrics?|loi bai hat|beat|instrumental|remix|mashup|teaser|trailer|behind the scenes|bts|vlog|interview|shorts?)\b/;
-const OFFICIAL = /\b(official|vevo|topic)\b/;
-/** Marks of a release (not a fan upload or a clip). */
-const RELEASE = /\b(official|mv|m\/v|music video|official audio|visualizer)\b/;
+  /\b(reaction|react|live|concert|hop bao|full album|tong hop|playlist|karaoke|cover|lyrics?|loi bai hat|beat|instrumental|remix|mashup|teaser|trailer|behind the scenes|bts|vlog|interview|shorts?|fan ?made|fanmade|ai visual)\b/;
 
 /**
  * "Bài mới / trending của <artist>" (spec 2026-10-18-dj-chat): the free AI has no live data,
@@ -27,7 +25,17 @@ export async function findFresh(
   artist: string,
   /** top: the artist's best-known songs, any year ("vài bài của Thùy Chi"). */
   mode: 'latest' | 'popular' | 'top',
+  /**
+   * Other names of the artist, normalised (DjResolver: "jack - j97", "jack", "j97"): their
+   * official channel may carry only one of them ("J97").
+   */
+  aliases: string[] = [],
 ): Promise<{ videos: FoundVideo[]; verified: boolean }> {
+  const names = [
+    ...new Set(
+      [normalizeQuery(artist), ...aliases].filter((n) => n.length >= 2),
+    ),
+  ];
   if (deps.innertube.available) {
     try {
       const tries =
@@ -50,7 +58,7 @@ export async function findFresh(
           LOOK_AT,
           filters,
         );
-        const songs = rank(videos, artist);
+        const songs = rank(videos, artist, names);
         if (songs.length) return { videos: songs, verified: true };
       }
       return { videos: [], verified: true };
@@ -72,35 +80,45 @@ export async function findFresh(
         thumbnailUrl: t.thumbnailUrl,
       })),
       artist,
+      names,
     ),
     verified: false,
   };
 }
 
-/** Song-like videos of that artist, their own channel first, otherwise in YouTube's order. */
-function rank(videos: FoundVideo[], artist: string): FoundVideo[] {
-  const a = normalizeQuery(artist);
-  const songs = videos.filter((v) => {
+/** A channel name as plain words: "Sơn Tùng M-TP Official" → "son tung m tp official". */
+function words(t: string): string {
+  return normalizeQuery(t)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/**
+ * Song-like videos from the artist's own channel: its name is theirs, alone or with "Official",
+ * "Vevo", "- Topic"… ("Đen Vâu Official" yes, "Anh Áo Đen" no). Their own channel first, in
+ * YouTube's order (date / popularity). `names`: the artist's names.
+ */
+function rank(
+  videos: FoundVideo[],
+  artist: string,
+  names: string[],
+): FoundVideo[] {
+  const forms = [...new Set([artist, ...names].map(words).filter(Boolean))];
+  const own = (channel: string | null) => {
+    const ch = words(channel ?? '');
+    return forms.some((n) =>
+      new RegExp(
+        `^${escape(n)}( (official|offical|vevo|topic|music|channel|tv|entertainment|s))*$`,
+        'u',
+      ).test(ch),
+    );
+  };
+  return videos.filter((v) => {
     const sec = v.durationSec ?? 0;
     if (sec < MIN_SEC || sec > MAX_SEC) return false;
-    const title = normalizeQuery(v.title);
-    if (NOT_A_SONG.test(title)) return false;
-    const ch = normalizeQuery(v.channel ?? '');
-    // The artist as a whole word of the title, from their channel, an official one, or a release.
-    const named = new RegExp(
-      `(^|[^\\p{L}\\p{N}])${escape(a)}($|[^\\p{L}\\p{N}])`,
-      'u',
-    );
-    if (!named.test(title) && !ch.includes(a)) return false;
-    return ch.includes(a) || OFFICIAL.test(ch) || RELEASE.test(title);
+    if (NOT_A_SONG.test(normalizeQuery(v.title))) return false;
+    return own(v.channel);
   });
-  const score = (v: FoundVideo) => {
-    const ch = normalizeQuery(v.channel ?? '');
-    // The artist's own channel, then any official one, then the rest.
-    return ch.includes(a) ? 0 : OFFICIAL.test(ch) ? 1 : 2;
-  };
-  // Array.prototype.sort is stable: equal scores keep YouTube's order (date / popularity).
-  return songs.sort((x, y) => score(x) - score(y));
 }
 
 function escape(s: string): string {

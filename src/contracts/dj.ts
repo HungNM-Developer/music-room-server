@@ -52,6 +52,8 @@ export const INFO_KINDS = [
   'myNext',
   'queueLength',
   'myCount',
+  /** The song after the one on air (who picked it, when it starts). */
+  'nextSong',
 ] as const;
 export type InfoKind = (typeof INFO_KINDS)[number];
 

@@ -95,6 +95,10 @@ function infoText(r: DjReply): string {
         : 'Hàng chờ đang trống.';
     case 'myCount':
       return `${r.forName} đang có ${i.count ?? 0} bài trong hàng chờ.`;
+    case 'nextSong':
+      return i.title
+        ? `Bài tiếp theo: ${i.title}${i.pickedBy ? ` (${i.pickedBy} chọn)` : ''}${when(i.etaSec)}.`
+        : 'Hàng chờ đang trống.';
   }
 }
 

@@ -19,21 +19,17 @@ import { SnapshotService } from '../state/snapshot.service';
 import { DjComboService } from './dj-combo.service';
 import { etaSec } from './dj-eta';
 import { chatLine } from './dj-chat-lines';
-import { type Plan, planCombo, type Target } from './dj-plan';
 import {
-  extractDjRequest,
-  howTopic,
-  isHowQuestion,
-  matchQuick,
-  matchRules,
-  type QuickMatch,
-} from './dj-rules';
-import {
-  CHAT_REPLY_MAX,
-  parseTranslation,
-  TRANSLATE_SYSTEM,
-  translateInput,
-} from './dj-translate';
+  type AiCall,
+  type Decision,
+  interpret,
+  type Platform,
+  QUEUE_FOR_AI,
+  type RoomContext,
+} from './dj-interpret';
+import type { Plan } from './dj-plan';
+import { extractDjRequest } from './dj-rules';
+import { CHAT_REPLY_MAX } from './dj-translate';
 
 const AI_TIMEOUT_MS = 12_000;
 const HOUR_MS = 3600_000;
@@ -41,79 +37,6 @@ const HOUR_MS = 3600_000;
 const MEMBERS_FOR_AI = 40;
 
 type Base = Pick<DjReply, 'forMemberId' | 'forName'>;
-/** Where "@DJ" was asked: the room page (spotlight) or Slack (no spotlight). */
-type Platform = 'room' | 'slack';
-
-/** One queue song named by title or place, nothing wider ("bài Lạc Trôi", "bài số 2"). */
-function oneSong(t: Target): boolean {
-  if (t.all || t.others || t.by || t.artist || t.keep || t.except?.length)
-    return false;
-  return (
-    t.titles?.length === 1 ||
-    t.positions?.length === 1 ||
-    t.first === 1 ||
-    t.last === 1
-  );
-}
-
-/**
- * A single task that is one button of the "Hướng dẫn" sheet (skip one song, pause, save the song
- * on air, heart / remove / pin one song): the DJ shows the button instead of pressing it (user's
- * choice, 2026-10-18). Several tasks, songs to find, or many songs at once are still done.
- */
-function guideOfSingle(plan: Plan): GuideTarget | null {
-  if (plan.wish || plan.steps.length !== 1) return null;
-  const s = plan.steps[0];
-  switch (s.do) {
-    case 'skip':
-      return (s.count ?? 1) === 1 ? 'skip' : null;
-    case 'pause':
-    case 'resume':
-      return 'pause';
-    case 'save':
-      return s.target ? null : 'save';
-    case 'heart':
-      return oneSong(s.target) ? 'heart' : null;
-    case 'remove':
-      return oneSong(s.target) ? 'itemMenu' : null;
-    case 'pin':
-      // "Phát ngay bài X" is two buttons (pin, then skip): the DJ does it.
-      return !s.now && oneSong(s.target) ? 'itemMenu' : null;
-    default:
-      return null;
-  }
-}
-
-/** The help topic a task belongs to, for "làm sao để <task>" read by the AI as the task. */
-function guideOfPlan(plan: Plan): GuideTarget | null {
-  const s = plan.steps[0];
-  if (!s) return null;
-  switch (s.do) {
-    case 'skip':
-      return 'skip';
-    case 'pause':
-    case 'resume':
-      return 'pause';
-    case 'heart':
-      return 'heart';
-    case 'remove':
-    case 'pin':
-    case 'replace':
-    case 'replaceWith':
-      return 'itemMenu';
-    case 'save':
-      return s.target ? 'playlist' : 'save';
-    case 'playlistSave':
-    case 'playlistCreate':
-    case 'playlistPlay':
-      return 'playlist';
-    case 'find':
-      return s.suggest ? 'suggestions' : 'add';
-    default:
-      return 'add';
-  }
-}
-
 /** Accents of Vietnamese: the asker wrote in Vietnamese (for the DJ's own lines). */
 const VIETNAMESE =
   /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
@@ -197,67 +120,13 @@ export class DjBrainService {
     if (!me || me.roomId !== actor.roomId || me.leftAt || me.kickedAt)
       return { ...base, kind: 'error', errorCode: 'UNAUTHENTICATED' };
     try {
-      const quick = matchQuick(request);
-      if (quick) return await this.fromQuick(quick, me, actor, base, platform);
-      if (!this.ai.enabled)
-        return await this.withoutAi(request, me, actor, base, platform);
-      // Only requests that need the AI count against the free quota.
-      const key = `dj-ai:${me.id}`;
-      const r = this.limiter.hit(
-        key,
-        this.env.DJ_AI_PER_HOUR,
-        HOUR_MS,
-        Date.now(),
-      );
-      if (!r.ok)
-        return await this.withoutAi(
-          request,
-          me,
-          actor,
-          base,
-          platform,
-          r.retryAfterSec,
-        );
-      const raw = await this.ai.json<unknown>(
-        'dj',
-        TRANSLATE_SYSTEM,
-        translateInput(
-          me.displayName,
-          await this.memberNames(me.roomId),
-          request,
-        ),
-        { temperature: 0.2, timeoutMs: AI_TIMEOUT_MS },
-      );
-      if (raw === null) {
-        // Every provider resting: the asker's free quota is not spent.
-        this.limiter.undo(key);
-        return await this.withoutAi(request, me, actor, base, platform, 0);
-      }
-      const t = parseTranslation(raw);
-      // "Làm sao để …": show where it is, never do it (the AI read it as a task).
-      if (isHowQuestion(request)) {
-        const guide =
-          t.kind === 'guide'
-            ? t.guide
-            : t.kind === 'plan'
-              ? guideOfPlan(t.plan)
-              : null;
-        if (guide) return await this.guide(guide, me, base);
-        if (t.kind === 'info') return await this.info(t.info, me, base);
-        return { ...base, kind: 'other' };
-      }
-      switch (t.kind) {
-        case 'plan':
-          return await this.combo(t.plan, me, actor, base, platform);
-        case 'info':
-          return await this.info(t.info, me, base);
-        case 'guide':
-          return await this.guide(t.guide, me, base);
-        case 'clarify':
-          return { ...base, kind: 'clarify', clarify: { about: t.about } };
-        case 'chat':
-          return this.chat(t.reply, request, me.roomId, base);
-      }
+      const decision = await interpret({
+        request,
+        room: await this.roomContext(me),
+        platform,
+        ai: this.ai.enabled ? this.aiCall(me.id) : null,
+      });
+      return await this.carryOut(decision, request, me, actor, base);
     } catch (e) {
       if (e instanceof AppError)
         return {
@@ -273,95 +142,93 @@ export class DjBrainService {
     }
   }
 
-  /** Who is in the room (people, not speakers), for "của <member>" vs "của <artist>". */
-  private async memberNames(roomId: string): Promise<string[]> {
-    const rows = await this.prisma.member.findMany({
-      where: { roomId, leftAt: null, kickedAt: null, isDevice: false },
-      select: { displayName: true },
-      orderBy: { lastSeenAt: 'desc' },
-      take: MEMBERS_FOR_AI,
+  /** The room as the AI sees it (spec: resolve "bài này", "bài của Lan", "bài số 3"). */
+  private async roomContext(me: Member): Promise<RoomContext> {
+    const [snap, rows] = await Promise.all([
+      this.snapshots.build(me.roomId),
+      this.prisma.member.findMany({
+        where: {
+          roomId: me.roomId,
+          leftAt: null,
+          kickedAt: null,
+          isDevice: false,
+        },
+        select: { displayName: true },
+        orderBy: { lastSeenAt: 'desc' },
+        take: MEMBERS_FOR_AI,
+      }),
+    ]);
+    const song = (
+      t: { title: string; artist: string | null },
+      by?: string | null,
+    ) => ({
+      title: t.title,
+      artist: t.artist,
+      by: by ?? null,
     });
-    return rows.map((r) => r.displayName);
+    const np = snap?.nowPlaying;
+    return {
+      asker: me.displayName,
+      members: rows.map((r) => r.displayName),
+      nowPlaying: np ? song(np.item.track, np.item.addedBy?.displayName) : null,
+      queue: (snap?.queue ?? [])
+        .slice(0, QUEUE_FOR_AI)
+        .map((q) => song(q.track, q.addedBy?.displayName)),
+    };
   }
 
-  private async fromQuick(
-    q: QuickMatch,
-    me: Member,
-    actor: Actor,
-    base: Base,
-    platform: Platform,
-  ): Promise<DjReply> {
-    switch (q.kind) {
-      case 'hello':
-        return { ...base, kind: 'hello' };
-      case 'info':
-        return this.info(q.info, me, base);
-      case 'guide':
-        return this.guide(q.guide, me, base);
-      case 'plan':
-        return this.combo(q.plan, me, actor, base, platform);
-    }
+  /** The request's one AI call, on the asker's free quota (given back when no AI answers). */
+  private aiCall(memberId: string): AiCall {
+    return async (system, user) => {
+      const key = `dj-ai:${memberId}`;
+      const r = this.limiter.hit(
+        key,
+        this.env.DJ_AI_PER_HOUR,
+        HOUR_MS,
+        Date.now(),
+      );
+      if (!r.ok) return { ok: false, retryAfterSec: r.retryAfterSec };
+      const raw = await this.ai.json<unknown>('dj', system, user, {
+        temperature: 0.2,
+        timeoutMs: AI_TIMEOUT_MS,
+      });
+      if (raw === null) {
+        // Every provider resting: the asker's free quota is not spent.
+        this.limiter.undo(key);
+        return { ok: false, retryAfterSec: 0 };
+      }
+      return { ok: true, raw };
+    };
   }
 
-  /**
-   * No AI (off, quota spent or every provider resting): the old combo rules may add, suggest
-   * or answer, but never remove (spec: removing is never a guess). `retryAfterSec`: the
-   * asker's quota is spent (> 0) or the providers rest (0).
-   */
-  private async withoutAi(
+  private async carryOut(
+    d: Decision,
     request: string,
     me: Member,
     actor: Actor,
     base: Base,
-    platform: Platform,
-    retryAfterSec?: number,
   ): Promise<DjReply> {
-    // A how-to question with no known topic: nothing to do without the AI either.
-    if (isHowQuestion(request)) {
-      const topic = howTopic(request);
-      if (topic) return this.guide(topic, me, base);
-      return retryAfterSec !== undefined
-        ? {
-            ...base,
-            kind: 'busy',
-            ...(retryAfterSec > 0 ? { retryAfterSec } : {}),
-          }
-        : { ...base, kind: 'other' };
+    switch (d.kind) {
+      case 'hello':
+      case 'other':
+        return { ...base, kind: d.kind };
+      case 'busy':
+        return {
+          ...base,
+          kind: 'busy',
+          ...(d.retryAfterSec ? { retryAfterSec: d.retryAfterSec } : {}),
+        };
+      case 'info':
+        return this.info(d.info, me, base);
+      case 'guide':
+        return this.guide(d.guide, me, base);
+      case 'clarify':
+        return { ...base, kind: 'clarify', clarify: { about: d.about } };
+      case 'chat':
+        return this.chat(d.reply, request, me.roomId, base);
+      case 'plan':
+        return this.combo(d.plan, me, actor, base);
     }
-    const plan = planCombo(request);
-    const safe = plan?.steps.filter(
-      (s) => s.do !== 'remove' && s.do !== 'replace',
-    );
-    if (plan && safe?.length && safe.length === plan.steps.length)
-      return this.combo({ ...plan, steps: safe }, me, actor, base, platform);
-    const rule = matchRules(request);
-    if (rule?.kind === 'info') return this.info(rule.info, me, base);
-    // "bài mới của Đen": a real YouTube lookup, no AI needed.
-    if (rule?.kind === 'fresh')
-      return this.combo(
-        {
-          steps: [
-            {
-              do: 'find',
-              find: { artist: rule.artist, mode: rule.mode },
-              count: 1,
-            },
-          ],
-        },
-        me,
-        actor,
-        base,
-        platform,
-      );
-    if (rule?.kind === 'guide' && rule.guide !== 'add')
-      return this.guide(rule.guide, me, base);
-    if (retryAfterSec !== undefined)
-      return {
-        ...base,
-        kind: 'busy',
-        ...(retryAfterSec > 0 ? { retryAfterSec } : {}),
-      };
-    return { ...base, kind: 'other' };
   }
 
   /** Small talk: the AI's line when it is short and clean, else one of the DJ's own. */
@@ -387,11 +254,7 @@ export class DjBrainService {
     me: Member,
     actor: Actor,
     base: Base,
-    platform: Platform = 'room',
   ): Promise<DjReply> {
-    // Slack has no spotlight: the one-button task is done there.
-    const single = platform === 'room' ? guideOfSingle(plan) : null;
-    if (single) return this.guide(single, me, base);
     // No second AI call: vague parts of the old rules ("2 bài chill") wait for the translator.
     const steps = await this.combos.run(plan, me, actor, () =>
       Promise.resolve(null),
@@ -495,6 +358,16 @@ export class DjBrainService {
           kind,
           count: queue.filter((q) => q.addedBy?.id === me.id).length,
         };
+        break;
+      case 'nextSong':
+        info = queue[0]
+          ? {
+              kind,
+              title: queue[0].track.title,
+              pickedBy: queue[0].addedBy?.displayName ?? null,
+              etaSec: snap ? etaSec(snap, 0) : null,
+            }
+          : { kind, title: null };
         break;
     }
     return { ...base, kind: 'info', info };

@@ -1,0 +1,1899 @@
+{
+ "room": {
+  "asker": "Khanh Nguyen",
+  "members": [
+   "Khanh Nguyen",
+   "Lan",
+   "Minh Anh",
+   "Tuấn"
+  ],
+  "nowPlaying": {
+   "title": "Nàng Thơ",
+   "artist": "Hoàng Dũng",
+   "by": "Lan"
+  },
+  "queue": [
+   {
+    "title": "Lạc Trôi",
+    "artist": "Sơn Tùng M-TP",
+    "by": "Lan"
+   },
+   {
+    "title": "Hoa Vô Sắc",
+    "artist": "Jack - J97",
+    "by": "Khanh Nguyen"
+   },
+   {
+    "title": "Bạc Phận",
+    "artist": "Jack - J97",
+    "by": "Khanh Nguyen"
+   },
+   {
+    "title": "Có Chắc Yêu Là Đây",
+    "artist": "Sơn Tùng M-TP",
+    "by": "Khanh Nguyen"
+   },
+   {
+    "title": "Đi Về Nhà",
+    "artist": "Đen, JustaTee",
+    "by": "Minh Anh"
+   },
+   {
+    "title": "See Tình",
+    "artist": "Hoàng Thùy Linh",
+    "by": "Minh Anh"
+   },
+   {
+    "title": "Waiting For You",
+    "artist": "MONO",
+    "by": "Lan"
+   },
+   {
+    "title": "Thiên Lý Ơi",
+    "artist": "Jack - J97",
+    "by": "Tuấn"
+   }
+  ]
+ },
+ "cases": [
+  {
+   "text": "thêm nhạc của jack j97",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "j97"
+      }
+     }
+    ]
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "thêm 3 bài của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "sơn tùng"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "chọn 3 bài của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "sơn tùng"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "lấy 3 bài của Đen Vâu",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "đen"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "cho tôi 3 bài của Mỹ Tâm",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "mỹ tâm"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "mở nhiều bài của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "sơn tùng"
+      },
+      "count": 5
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm những bài của Đen",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "đen"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 1 bài của Hà Anh Tuấn",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "hà anh tuấn"
+      },
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 7 bài của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "sơn tùng"
+      },
+      "count": 5,
+      "asked": 7
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm mười bài của Đen",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "đen"
+      },
+      "count": 5,
+      "asked": 10
+     }
+    ]
+   }
+  },
+  {
+   "text": "nghe nhạc của ryhder đi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "der"
+      }
+     }
+    ]
+   },
+   "note": "typo of RHYDER"
+  },
+  {
+   "text": "add some taylor swift please",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "taylor swift"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "tìm cho tôi 3 bài hot nhất của j97",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "j97",
+       "mode": "popular"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 3 bài mới nhất của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "sơn tùng",
+       "mode": "latest"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "bài mới của Đen",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "đen",
+       "mode": "latest"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "Jack có bài gì mới không",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "jack",
+       "mode": "latest"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "bật bài trending của Hoàng Thùy Linh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "hoàng thùy linh",
+       "mode": "popular"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm bài Nơi Này Có Anh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "nơi này có anh"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "bật Hãy Trao Cho Anh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "hãy trao cho anh"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm Em Của Ngày Hôm Qua và Âm Thầm Bên Em",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "em của ngày hôm qua",
+        "âm thầm bên em"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 3 bài Lạc Trôi, Nàng Thơ, Hãy Trao Cho Anh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "lạc trôi",
+        "nàng thơ",
+        "hãy trao cho anh"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 1. Chúng Ta Của Hiện Tại 2. Lạ Lùng 3. Bước Qua Nhau",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "chúng ta của hiện tại",
+        "lạ lùng",
+        "bước qua nhau"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm: Chúng Ta Của Hiện Tại; Lạ Lùng; Bước Qua Nhau",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "chúng ta của hiện tại",
+        "lạ lùng",
+        "bước qua nhau"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm Hãy trao cho anh và Chúng ta của hiện tại, tặng cả phòng chúc cuối tuần vui vẻ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "hãy trao cho anh",
+        "chúng ta của hiện tại"
+       ]
+      }
+     }
+    ],
+    "wish": "cuối tuần"
+   }
+  },
+  {
+   "text": "bật bài Ngày Mai Người Ta Lấy Chồng tặng Lan",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "ngày mai người ta lấy chồng"
+       ]
+      }
+     }
+    ],
+    "wish": "lan"
+   }
+  },
+  {
+   "text": "thêm bài Em Của Ngày Hôm Qua của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "em của ngày hôm qua"
+       ],
+       "artist": "sơn tùng"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm bài nào đó của Đen Vâu nhưng đừng thêm Bài này chill phết",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "đen",
+       "exclude": {
+        "titles": [
+         "bài này chill phết"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "phát bài Lạc Trôi ngay",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin",
+      "now": true,
+      "target": {
+       "titles": [
+        "lạc trôi"
+       ]
+      }
+     }
+    ]
+   },
+   "note": "Lạc Trôi is queued"
+  },
+  {
+   "text": "bật Chúng Ta Không Thuộc Về Nhau ngay sau bài này",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "chúng ta không thuộc về nhau"
+       ]
+      },
+      "pin": "next"
+     }
+    ]
+   }
+  },
+  {
+   "text": "cho vài bài chill chill để làm việc",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "bật mấy bài buồn buồn",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 2 bài lofi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "text": "kiếm cho tôi 3 bài nhạc Hàn",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "chọn giúp tôi 2 bài chill",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm 10 bài nhạc trẻ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 5,
+      "asked": 10
+     }
+    ]
+   }
+  },
+  {
+   "text": "có bài nào giống bài đang phát không",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "similar_now"
+      },
+      "suggest": true
+     }
+    ]
+   }
+  },
+  {
+   "text": "tìm 2 bài giống bài đang phát",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "similar_now"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "gợi ý bài hát của j97",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "j97"
+      },
+      "suggest": true
+     }
+    ]
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "gợi ý vài bài của Thùy Chi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "thùy chi"
+      },
+      "suggest": true
+     }
+    ]
+   }
+  },
+  {
+   "text": "nên nghe gì bây giờ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "suggest": true
+     }
+    ]
+   }
+  },
+  {
+   "text": "có bài nào hay của Vũ không",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "artist": "vũ"
+      },
+      "suggest": true
+     }
+    ]
+   }
+  },
+  {
+   "text": "gợi ý nhạc cho buổi chiều",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "suggest": true
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm mấy bài tôi đã lưu",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "addFrom",
+      "source": "saved"
+     }
+    ]
+   }
+  },
+  {
+   "text": "bật lại 3 bài vừa phát",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "addFrom",
+      "source": "played",
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá hết bài tôi đã chọn, chỉ chừa bài của j97",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "mine": true,
+       "keep": {
+        "artist": "j97"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá toàn bộ bài của tôi trừ bài của j97",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "mine": true,
+       "keep": {
+        "artist": "j97"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá bài của Lan",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "by": "lan"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá bài của Lan trừ Waiting For You",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "by": "lan",
+       "keep": {
+        "titles": [
+         "waiting for you"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá 2 bài cuối của tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "mine": true,
+       "last": 2
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá các bài của tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "mine": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá hết bài trong hàng chờ của mọi người trừ của tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove"
+     }
+    ]
+   }
+  },
+  {
+   "text": "gỡ hết bài của Sơn Tùng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "artist": "sơn tùng"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá bài của Minh Anh và Tuấn",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove"
+     },
+     "..."
+    ]
+   }
+  },
+  {
+   "text": "xoá bớt đi",
+   "expect": {
+    "kind": "clarify",
+    "about": "removeScope"
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "xoá đi",
+   "expect": {
+    "kind": "clarify"
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "xoá",
+   "expect": {
+    "kind": "clarify"
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "xoá hết hàng chờ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "all": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "xoá bài Lạc Trôi",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   }
+  },
+  {
+   "text": "xoá bài số 3",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   }
+  },
+  {
+   "text": "xoá bài cuối của tôi",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   }
+  },
+  {
+   "text": "xoá bài bac phan",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   },
+   "note": "no accents"
+  },
+  {
+   "text": "đổi bài Bạc Phận thành Nơi này có anh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "replaceWith",
+      "target": {
+       "titles": [
+        "bạc phận"
+       ]
+      },
+      "find": {
+       "titles": [
+        "nơi này có anh"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "đổi bài này thành Nàng Thơ",
+   "expect": {
+    "kind": "clarify"
+   },
+   "forbid": [
+    "remove",
+    "replaceWith"
+   ]
+  },
+  {
+   "text": "thả tim bài số 2",
+   "expect": {
+    "kind": "guide",
+    "guide": "heart"
+   }
+  },
+  {
+   "text": "thả tim Lạc Trôi",
+   "expect": {
+    "kind": "guide",
+    "guide": "heart"
+   }
+  },
+  {
+   "text": "thả tim bài hoa vô sắc",
+   "expect": {
+    "kind": "guide",
+    "guide": "heart"
+   }
+  },
+  {
+   "text": "thả tim 3 bài đầu",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "heart",
+      "target": {
+       "first": 3
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thả tim tất cả",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "heart"
+     }
+    ]
+   }
+  },
+  {
+   "text": "thả tim các bài của Lan",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "heart",
+      "target": {
+       "by": "lan"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "thả tim hết bài của Minh Anh",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "heart",
+      "target": {
+       "by": "minh anh"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "ghim bài Waiting for you lên tiếp theo",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   }
+  },
+  {
+   "text": "ghim bài thien ly oi",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   },
+   "note": "no accents"
+  },
+  {
+   "text": "skip đến bài cuối giúp tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin",
+      "now": true,
+      "target": {
+       "positions": [
+        -1
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "phát ngay bài cuối hàng chờ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin",
+      "now": true,
+      "target": {
+       "positions": [
+        -1
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "chuyển sang bài Thiên Lý Ơi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin",
+      "now": true,
+      "target": {
+       "titles": [
+        "thiên lý ơi"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "phát bài số 3 ngay",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin",
+      "now": true,
+      "target": {
+       "positions": [
+        3
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "ưu tiên 2 bài của tôi lên trước",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pin"
+     },
+     "..."
+    ]
+   }
+  },
+  {
+   "text": "skip giúp tôi",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "bỏ qua bài này",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "next",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "bài này dở quá bỏ qua đi",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "bỏ bài đang phát đi",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "bỏ qua 2 bài",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "skip",
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "text": "bỏ qua 2 bài rồi tạm dừng",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "skip",
+      "count": 2
+     },
+     {
+      "do": "pause"
+     }
+    ]
+   }
+  },
+  {
+   "text": "tạm dừng",
+   "expect": {
+    "kind": "guide",
+    "guide": "pause"
+   }
+  },
+  {
+   "text": "dừng nhạc giúp mình",
+   "expect": {
+    "kind": "guide",
+    "guide": "pause"
+   }
+  },
+  {
+   "text": "phát tiếp đi",
+   "expect": {
+    "kind": "guide",
+    "guide": "pause"
+   }
+  },
+  {
+   "text": "skip rồi bật Nàng Thơ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "skip"
+     },
+     {
+      "do": "find",
+      "find": {
+       "titles": [
+        "nàng thơ"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "tạm dừng rồi thêm 2 bài chill",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "pause"
+     },
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      },
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "text": "lưu bài này",
+   "expect": {
+    "kind": "guide",
+    "guide": "save"
+   }
+  },
+  {
+   "text": "lưu bài đang phát",
+   "expect": {
+    "kind": "guide",
+    "guide": "save"
+   }
+  },
+  {
+   "text": "lưu tất cả các bài trong hàng chờ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "save",
+      "target": {}
+     }
+    ]
+   },
+   "note": "any target"
+  },
+  {
+   "text": "lưu các bài của Lan",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "save",
+      "target": {
+       "by": "lan"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "lưu bài này vào playlist Chill",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistSave",
+      "playlist": "chill",
+      "target": null
+     }
+    ]
+   }
+  },
+  {
+   "text": "lưu các bài của Lan vào playlist DJ Lan",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistSave",
+      "playlist": "dj lan",
+      "target": {
+       "by": "lan"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "tạo playlist Nhạc thứ Sáu",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistCreate",
+      "name": "nhạc thứ sáu"
+     }
+    ]
+   }
+  },
+  {
+   "text": "tạo playlist Nhạc thứ Sáu gồm 5 bài của Đen",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistCreate",
+      "name": "nhạc thứ sáu",
+      "find": {
+       "artist": "đen"
+      },
+      "count": 5
+     }
+    ]
+   }
+  },
+  {
+   "text": "phát playlist Chill",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistPlay",
+      "playlist": "chill"
+     }
+    ]
+   }
+  },
+  {
+   "text": "bật playlist nhạc buồn của tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistPlay",
+      "playlist": "nhạc buồn"
+     }
+    ]
+   }
+  },
+  {
+   "text": "cho cả playlist Chill vào hàng chờ",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "playlistPlay",
+      "playlist": "chill"
+     }
+    ]
+   }
+  },
+  {
+   "text": "bài đang phát tên gì vậy",
+   "expect": {
+    "kind": "info",
+    "info": "nowPlaying"
+   }
+  },
+  {
+   "text": "bài này là bài gì",
+   "expect": {
+    "kind": "info",
+    "info": "nowPlaying"
+   }
+  },
+  {
+   "text": "what's playing",
+   "expect": {
+    "kind": "info",
+    "info": "nowPlaying"
+   }
+  },
+  {
+   "text": "ai chọn bài này vậy",
+   "expect": {
+    "kind": "info",
+    "info": "whoPicked"
+   }
+  },
+  {
+   "text": "bao giờ tới bài của tôi",
+   "expect": {
+    "kind": "info",
+    "info": "myNext"
+   }
+  },
+  {
+   "text": "còn mấy bài nữa tới lượt tôi",
+   "expect": {
+    "kind": "info",
+    "info": "myNext"
+   }
+  },
+  {
+   "text": "hàng chờ còn mấy bài",
+   "expect": {
+    "kind": "info",
+    "info": "queueLength"
+   }
+  },
+  {
+   "text": "tôi đã thêm mấy bài",
+   "expect": {
+    "kind": "info",
+    "info": "myCount"
+   }
+  },
+  {
+   "text": "bài tiếp theo là bài gì",
+   "expect": {
+    "kind": "info",
+    "info": "nextSong"
+   }
+  },
+  {
+   "text": "làm sao để skip bài",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "lưu bài này như thế nào",
+   "expect": {
+    "kind": "guide",
+    "guide": "save"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "thả tim ở đâu",
+   "expect": {
+    "kind": "guide",
+    "guide": "heart"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "cách thêm bài vào hàng chờ",
+   "expect": {
+    "kind": "guide",
+    "guide": "add"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "how do I skip a song",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "muốn xem lời bài hát thì bấm đâu",
+   "expect": {
+    "kind": "guide",
+    "guide": "lyrics"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao để xoá bài của mình",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "ghim bài thế nào",
+   "expect": {
+    "kind": "guide",
+    "guide": "itemMenu"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao tạo playlist",
+   "expect": {
+    "kind": "guide",
+    "guide": "playlist"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao gửi lời chúc",
+   "expect": {
+    "kind": "guide",
+    "guide": "wish"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "đổi theme ở đâu",
+   "expect": {
+    "kind": "guide",
+    "guide": "theme"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao mời người khác vào phòng",
+   "expect": {
+    "kind": "guide",
+    "guide": "share"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "nghe cùng là gì",
+   "expect": {
+    "kind": "guide",
+    "guide": "listen"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao để chặn một bài",
+   "expect": {
+    "kind": "guide",
+    "guide": "block"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao bật nhạc trên loa",
+   "expect": {
+    "kind": "guide",
+    "guide": "host"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "xem lịch sử ở đâu",
+   "expect": {
+    "kind": "guide",
+    "guide": "history"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "đổi ngôn ngữ sang tiếng Anh thế nào",
+   "expect": {
+    "kind": "guide",
+    "guide": "lang"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao cấp quyền cho Lan",
+   "expect": {
+    "kind": "guide",
+    "guide": "permissions"
+   },
+   "forbid": [
+    "skip",
+    "save",
+    "remove",
+    "heart",
+    "pin",
+    "pause",
+    "resume"
+   ]
+  },
+  {
+   "text": "làm sao để bài của tôi được phát sớm hơn",
+   "expect": {
+    "kind": "guide"
+   }
+  },
+  {
+   "text": "chào DJ",
+   "expect": {
+    "kind": "hello"
+   }
+  },
+  {
+   "text": "cảm ơn nhé",
+   "expect": {
+    "kind": "hello"
+   }
+  },
+  {
+   "text": "nay mệt quá",
+   "expect": {
+    "kind": "chat"
+   }
+  },
+  {
+   "text": "hôm nay trời đẹp ghê",
+   "expect": {
+    "kind": "chat"
+   }
+  },
+  {
+   "text": "bạn là ai",
+   "expect": {
+    "kind": "chat"
+   }
+  },
+  {
+   "text": "kể chuyện cười đi",
+   "expect": {
+    "kind": "chat"
+   }
+  },
+  {
+   "text": "2+2 bằng mấy",
+   "expect": {
+    "kind": "chat"
+   }
+  },
+  {
+   "text": "skip this song",
+   "expect": {
+    "kind": "guide",
+    "guide": "skip"
+   }
+  },
+  {
+   "text": "play some chill songs",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "mood"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "remove all my songs except Taylor Swift",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "mine": true,
+       "keep": {
+        "artist": "taylor swift"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "text": "skip giúp tôi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "skip"
+     }
+    ]
+   },
+   "platform": "slack"
+  },
+  {
+   "text": "lưu bài này",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "save",
+      "target": null
+     }
+    ]
+   },
+   "platform": "slack"
+  },
+  {
+   "text": "làm sao đổi theme",
+   "expect": {
+    "kind": "guide",
+    "guide": "theme"
+   },
+   "platform": "slack"
+  },
+  {
+   "text": "xoá bài của Đen",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "remove",
+      "target": {
+       "by": "đen"
+      }
+     }
+    ]
+   },
+   "members": [
+    "Khanh Nguyen",
+    "Lan",
+    "Đen"
+   ]
+  }
+ ]
+}

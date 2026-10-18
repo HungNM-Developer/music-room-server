@@ -202,7 +202,9 @@ export class InnerTubeProvider {
    * The artist YouTube Music finds first for a name the user typed ("j97" → "Jack - J97"), when
    * the two names share a word; null when there is no such artist. Throws on failure.
    */
-  async musicArtist(name: string): Promise<{ name: string } | null> {
+  async musicArtist(
+    name: string,
+  ): Promise<{ name: string; channelId: string | null } | null> {
     return this.counted(async () => {
       const yt = await this.session();
       const res = await withTimeout(
@@ -211,10 +213,12 @@ export class InnerTubeProvider {
       );
       const first = (res.contents ?? [])
         .flatMap((s) => (s as { contents?: unknown[] }).contents ?? [])
-        .map((x) => x as { item_type?: string; name?: string })
+        .map((x) => x as { item_type?: string; name?: string; id?: string })
         .find((x) => x.item_type === 'artist' && x.name);
       if (!first?.name) return null;
-      return sharesWord(first.name, name) ? { name: first.name } : null;
+      return sharesWord(first.name, name)
+        ? { name: first.name, channelId: first.id ?? null }
+        : null;
     });
   }
 
@@ -255,6 +259,100 @@ export class InnerTubeProvider {
           });
           if (out.length >= max) return out;
         }
+      return out;
+    });
+  }
+
+  /**
+   * An artist's page on YouTube Music: "Bài hát hàng đầu" (their most played songs, credited to
+   * them) and their releases, newest first (singles and EPs, then albums). Throws on failure.
+   */
+  async musicArtistPage(channelId: string): Promise<{
+    top: MusicSong[];
+    releases: { id: string; title: string; year: number | null }[];
+  }> {
+    return this.counted(async () => {
+      const yt = await this.session();
+      const page = await withTimeout(
+        yt.music.getArtist(channelId),
+        HTTP_TIMEOUT_MS,
+      );
+      type Item = {
+        item_type?: string;
+        id?: string;
+        title?: string | { toString(): string };
+        artists?: { name?: string }[];
+        duration?: { seconds?: number };
+        year?: string;
+      };
+      const sections = (page.sections ?? []) as unknown as {
+        type?: string;
+        contents?: Item[];
+      }[];
+      const top: MusicSong[] = [];
+      for (const it of sections.find((s) => s.type === 'MusicShelf')
+        ?.contents ?? []) {
+        const title = it.title?.toString();
+        if (
+          it.item_type !== 'song' ||
+          !it.id ||
+          !VIDEO_ID.test(it.id) ||
+          !title
+        )
+          continue;
+        const seconds = it.duration?.seconds ?? 0;
+        top.push({
+          externalId: it.id,
+          title,
+          artist: (it.artists ?? [])
+            .map((a) => a.name)
+            .filter(Boolean)
+            .join(', '),
+          durationSec: seconds > 0 ? seconds : null,
+        });
+      }
+      // Each carousel of albums / singles is newest first; a stable sort by year merges them.
+      const releases = sections
+        .flatMap((s) => s.contents ?? [])
+        .filter((it) => it.item_type === 'album' && it.id)
+        .map((it) => ({
+          id: it.id!,
+          title: it.title?.toString() ?? '',
+          year: Number(it.year) || null,
+        }))
+        .sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+      return { top, releases };
+    });
+  }
+
+  /** The songs of a YouTube Music album / single, in order. Throws on failure. */
+  async musicAlbumSongs(browseId: string): Promise<MusicSong[]> {
+    return this.counted(async () => {
+      const yt = await this.session();
+      const album = await withTimeout(
+        yt.music.getAlbum(browseId),
+        HTTP_TIMEOUT_MS,
+      );
+      const out: MusicSong[] = [];
+      for (const x of (album.contents ?? []) as unknown as {
+        id?: string;
+        title?: string | { toString(): string };
+        artists?: { name?: string }[];
+        duration?: { seconds?: number };
+      }[]) {
+        const title = x.title?.toString();
+        if (!x.id || !VIDEO_ID.test(x.id) || !title) continue;
+        const seconds = x.duration?.seconds ?? 0;
+        out.push({
+          externalId: x.id,
+          title,
+          artist: (x.artists ?? [])
+            .map((a) => a.name)
+            .filter(Boolean)
+            .join(', '),
+          durationSec: seconds > 0 ? seconds : null,
+        });
+      }
       return out;
     });
   }
