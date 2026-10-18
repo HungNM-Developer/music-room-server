@@ -23,6 +23,8 @@ export interface Artist {
   strict: string[];
   /** Found on YouTube Music. */
   verified: boolean;
+  /** Their YouTube Music artist page (top songs, releases), when found. */
+  channelId?: string | null;
 }
 
 const CACHE_MS = 24 * 60 * 60_000;
@@ -188,7 +190,7 @@ export class DjResolver {
     const key = normalizeQuery(said);
     const hit = this.cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.artist;
-    let found: { name: string } | null = null;
+    let found: { name: string; channelId: string | null } | null = null;
     let looked = false;
     if (this.innertube.available)
       try {
@@ -203,6 +205,7 @@ export class DjResolver {
           aliases: aliasesOf(found.name, said),
           strict: [normalizeQuery(found.name), key],
           verified: true,
+          channelId: found.channelId,
         }
       : {
           name: said,

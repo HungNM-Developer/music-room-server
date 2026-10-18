@@ -235,6 +235,10 @@ const GUIDES: [GuideTarget, RegExp][] = [
 
 const INFOS: [InfoKind, RegExp][] = [
   [
+    'nextSong',
+    /(^| )(bai (tiep theo|ke tiep|sau) (la|se la)?( bai)? ?(gi|nao)|tiep theo (la|phat) (bai )?(gi|nao)|sap (toi|phat) (la )?bai (gi|nao)|what('s| is) next)( |$)/,
+  ],
+  [
     'myCount',
     /(^| )(toi|minh|em|tui) (da )?(them|chon|bat) (bao nhieu|may) bai/,
   ],

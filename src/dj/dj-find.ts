@@ -27,6 +27,8 @@ export interface Candidate {
 const NOT_THE_SONG =
   /\b(cover|karaoke|reaction|react|remix|mashup|beat|instrumental|lyrics?|loi bai hat|live|nightcore|8d|slowed|speed up|sped up|tong hop|tuyen tap|lien khuc|nonstop|mix|hay nhat|top \d+|top nhung|khong loi|acoustic|piano|vinahouse|vina house|edm|guitar|lofi|lo-fi|ver|version|ballad|tiktok|playlist|full album|teaser|trailer|shorts?)\b/;
 const MAX_SEC = 600;
+/** Newest releases looked at for "bài mới nhất" (one album lookup each). */
+const LATEST_RELEASES = 5;
 /** YouTube Music answers looked at per search. */
 const LOOK_AT = 15;
 
@@ -176,12 +178,48 @@ export class DjFinder {
     artist: Artist,
     mode: Find['mode'],
   ): AsyncGenerator<Candidate> {
+    // Their YouTube Music page first: songs credited to them, never a fan upload.
+    const page = await this.artistPage(artist);
+    const credited = (s: MusicSong) =>
+      !notTheSong(s.title, '') && (s.durationSec ?? 0) <= MAX_SEC;
+    if (mode === 'latest') {
+      // Newest release first; one song from each ("3 bài mới nhất" = their 3 latest releases),
+      // then the other songs of those releases.
+      const later: MusicSong[] = [];
+      for (const r of (page?.releases ?? []).slice(0, LATEST_RELEASES)) {
+        const songs = (await this.albumSongs(r.id)).filter(credited);
+        if (songs[0])
+          yield {
+            externalId: songs[0].externalId,
+            title: songs[0].title,
+            artist: songs[0].artist,
+            fresh: 'latest',
+          };
+        later.push(...songs.slice(1));
+      }
+      for (const s of later)
+        yield {
+          externalId: s.externalId,
+          title: s.title,
+          artist: s.artist,
+          fresh: 'latest',
+        };
+    }
+    if (mode === 'popular' || mode === 'top' || !mode)
+      for (const s of (page?.top ?? []).filter(credited))
+        yield {
+          externalId: s.externalId,
+          title: s.title,
+          artist: s.artist,
+          ...(mode === 'popular' ? { fresh: 'popular' as const } : {}),
+        };
     if (mode === 'latest' || mode === 'popular') {
       const { videos, verified } = await findFresh(
         { innertube: this.innertube, search: this.search },
         memberId,
         artist.name,
         mode,
+        artist.strict,
       );
       for (const v of videos)
         yield {
@@ -190,23 +228,42 @@ export class DjFinder {
           artist: v.channel,
           ...(verified ? { fresh: mode } : {}),
         };
-      return;
+      // "Newest" has no stand-in. "Hot" does: their best-known songs (not called "hot").
+      if (mode === 'latest') return;
     }
     for (const s of await this.musicSongs(artist.name, 25))
-      if (
-        creditsArtist(s.artist, artist, true) &&
-        !notTheSong(s.title, '') &&
-        (s.durationSec ?? 0) <= MAX_SEC
-      )
+      if (creditsArtist(s.artist, artist, true) && credited(s))
         yield { externalId: s.externalId, title: s.title, artist: s.artist };
     const { videos } = await findFresh(
       { innertube: this.innertube, search: this.search },
       memberId,
       artist.name,
       'top',
+      artist.strict,
     );
     for (const v of videos)
       yield { externalId: v.externalId, title: v.title, artist: v.channel };
+  }
+
+  private async artistPage(artist: Artist) {
+    if (!artist.channelId || !this.innertube.available) return null;
+    try {
+      return await this.innertube.musicArtistPage(artist.channelId);
+    } catch (e) {
+      this.logger.warn(
+        `YouTube Music artist page ${artist.name} failed: ${String(e)}`,
+      );
+      return null;
+    }
+  }
+
+  private async albumSongs(browseId: string): Promise<MusicSong[]> {
+    try {
+      return await this.innertube.musicAlbumSongs(browseId);
+    } catch (e) {
+      this.logger.warn(`YouTube Music album ${browseId} failed: ${String(e)}`);
+      return [];
+    }
   }
 
   /** YouTube's own "up next" for the song on air. */

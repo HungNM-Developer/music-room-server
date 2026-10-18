@@ -16,7 +16,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "prebuild": "prisma generate"
+    "prebuild": "prisma generate",
+    "dj:eval": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"resolvePackageJsonExports\":false}' ts-node --transpile-only scripts/dj-eval/run.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
