@@ -1,0 +1,20 @@
+# Exposed through k3s' bundled Traefik (ports 80/443 on the Pi). WebSocket works as is.
+# The host must match the hostname your tunnel / DNS sends here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: music-room
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: api.musicroom.io.vn
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3001

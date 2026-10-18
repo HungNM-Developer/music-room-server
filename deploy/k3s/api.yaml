@@ -1,0 +1,92 @@
+# Music Room API (NestJS + Socket.IO). Rooms and timers live in this process, so it runs
+# as exactly one replica and is replaced with Recreate (never two at once).
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: music-room
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 3001
+      targetPort: 3001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: music-room
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      initContainers:
+        # Migrations run in the main container; just wait until Postgres accepts connections.
+        - name: wait-for-db
+          image: postgres:16-alpine
+          command: ["sh", "-c", "until pg_isready -h db -U musicroom; do sleep 2; done"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: api
+          image: ghcr.io/hungnm-developer/music-room-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: music-room-config
+            - secretRef:
+                name: music-room-secrets
+          env:
+            - name: PORT
+              value: "3001"
+            - name: TRUST_PROXY
+              value: "true"
+            - name: NODE_OPTIONS
+              value: --max-old-space-size=320
+          # `prisma migrate deploy` runs before the server listens: give it time on a Pi.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        # JWT_SECRET comes from the Secret, so /data needs no persistent volume.
+        - name: data
+          emptyDir: {}

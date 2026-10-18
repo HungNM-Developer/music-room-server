@@ -1,0 +1,14 @@
+# Non-secret settings. Secrets (DB password, JWT, API keys) go in music-room-secrets:
+# see README.md, step 4.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: music-room-config
+  namespace: music-room
+data:
+  NODE_ENV: production
+  # The web address (used for share links / QR codes).
+  PUBLIC_URL: https://musicroom.io.vn
+  # Other web origins allowed to call the API, comma-separated.
+  CORS_ORIGINS: https://musicroom.io.vn
+  ROOM_TIMEZONE: Asia/Ho_Chi_Minh

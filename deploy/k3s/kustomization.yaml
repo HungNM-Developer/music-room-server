@@ -1,0 +1,10 @@
+# kubectl apply -k deploy/k3s
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: music-room
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - api.yaml
+  - ingress.yaml

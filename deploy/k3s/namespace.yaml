@@ -1,0 +1,33 @@
+# Each app on the cluster gets its own namespace; deleting it removes everything inside.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: music-room
+---
+# Defaults for containers without explicit resources, so one app cannot starve the Pi (4 GB).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: music-room
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+      default:
+        cpu: 500m
+        memory: 256Mi
+---
+# Upper bound for the whole namespace; leaves room for the other apps on the node.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+  namespace: music-room
+spec:
+  hard:
+    requests.memory: 1Gi
+    limits.memory: 1536Mi
+    persistentvolumeclaims: "3"

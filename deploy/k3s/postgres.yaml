@@ -1,0 +1,84 @@
+# PostgreSQL for the API. Data lives on the node via k3s' local-path provisioner
+# (/var/lib/rancher/k3s/storage). Only reachable inside the cluster (no NodePort).
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: music-room
+spec:
+  selector:
+    app: db
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: music-room
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          # Small-memory tuning for a Raspberry Pi.
+          args:
+            - -c
+            - shared_buffers=128MB
+            - -c
+            - max_connections=40
+            - -c
+            - effective_cache_size=256MB
+            - -c
+            - work_mem=4MB
+          env:
+            - name: POSTGRES_USER
+              value: musicroom
+            - name: POSTGRES_DB
+              value: musicroom
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: music-room-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "musicroom"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "musicroom"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi
