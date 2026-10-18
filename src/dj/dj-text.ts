@@ -1,6 +1,12 @@
 import { chatError } from '../chat/chat-text';
 import { AppError } from '../common/app-error';
-import type { DjAction, DjReply, DjStep, GuideTarget } from '../contracts';
+import type {
+  DjAction,
+  DjClarify,
+  DjReply,
+  DjStep,
+  GuideTarget,
+} from '../contracts';
 
 /**
  * The DJ's answer as plain Vietnamese: the chat history's `content`, the speaker screen and
@@ -68,7 +74,32 @@ const VERB: Record<DjAction, string> = {
   vote: 'bỏ phiếu bỏ qua',
   pause: 'tạm dừng',
   resume: 'phát tiếp',
+  suggest: 'gợi ý bài',
+  save: 'lưu bài',
+  playlistSave: 'lưu vào playlist',
+  playlistCreate: 'tạo playlist',
+  playlistPlay: 'phát playlist',
 };
+
+const CLARIFY: Record<DjClarify, string> = {
+  removeScope:
+    'Bạn muốn gỡ bài nào? Ví dụ: "gỡ bài cuối của tôi", "gỡ bài của Lan", "gỡ hết bài của tôi trừ bài của Đen".',
+  whichSong: 'Bạn nói rõ tên bài (và ca sĩ) giúp mình nhé.',
+  whichPlaylist: 'Playlist nào vậy?',
+};
+
+/** "của Jack - J97" when the DJ resolved the artist. */
+function by(s: DjStep): string {
+  return s.artist ? ` của ${s.artist}` : '';
+}
+
+function list(tracks: { title: string }[] | undefined, max = 5): string {
+  const t = tracks ?? [];
+  const shown = t.slice(0, max).map((x) => `"${x.title}"`);
+  return t.length > max
+    ? `${shown.join(', ')} và ${t.length - max} bài khác`
+    : shown.join(', ');
+}
 
 /** One line of a combo answer. */
 export function stepText(s: DjStep): string {
@@ -81,8 +112,18 @@ export function stepText(s: DjStep): string {
         const at = s.position
           ? `, đứng thứ ${s.position}${when(s.etaSec)}`
           : '';
-        return `Đã thêm ${song}${at}${wish}`;
+        return `Đã thêm ${song}${by(s)}${at}${wish}`;
       }
+      case 'suggest':
+        return `Gợi ý bài${by(s)}: ${list(s.tracks, 10)}`;
+      case 'save':
+        return `Đã lưu ${song} vào bài đã lưu`;
+      case 'playlistSave':
+        return `Đã lưu ${song} vào playlist "${s.playlist?.name ?? ''}"${s.playlist?.created ? ' (playlist mới)' : ''}`;
+      case 'playlistCreate':
+        return `Đã ${s.playlist?.created ? 'tạo' : 'cập nhật'} playlist "${s.playlist?.name ?? ''}"${s.added ? `, thêm ${s.added} bài${by(s)}` : ''}`;
+      case 'playlistPlay':
+        return `Đã thêm ${s.added ?? 0}/${s.total ?? 0} bài của playlist "${s.playlist?.name ?? ''}" vào hàng chờ`;
       case 'heart':
         if (s.reason === 'alreadyHearted')
           return `${song} đã được thả tim từ trước`;
@@ -90,6 +131,8 @@ export function stepText(s: DjStep): string {
           ? `Đã thả tim ${song} (mỗi người chỉ thả tim được 1 bài trong hàng chờ)`
           : `Đã thả tim ${song}`;
       case 'remove':
+        if (s.reason === 'kept')
+          return `Đã giữ lại ${s.tracks?.length ?? 0} bài${by(s)}: ${list(s.tracks)}${s.unsure ? ` (${s.unsure} bài giữ lại vì chưa chắc ca sĩ)` : ''}`;
         return `Đã gỡ ${song}`;
       case 'pin':
         return s.now
@@ -107,8 +150,10 @@ export function stepText(s: DjStep): string {
   switch (s.reason) {
     case 'notFound':
       if (s.got !== undefined) return `Chỉ thêm được ${s.got}/${s.wanted} bài`;
+      if (s.action === 'playlistPlay')
+        return `Playlist "${s.playlist?.name ?? ''}" chưa có bài nào`;
       return s.query
-        ? `Không tìm thấy "${s.query}"`
+        ? `Không tìm thấy "${s.query}"${by(s)}`
         : 'Không tìm thấy bài phù hợp';
     case 'busy':
       return 'DJ đang bận, chưa chọn được bài';
@@ -120,6 +165,12 @@ export function stepText(s: DjStep): string {
       return `Không thả tim được ${song}: đó là bài của chính bạn`;
     case 'tooMany':
       return `Mỗi lần DJ thêm tối đa ${s.got} bài (bạn xin ${s.wanted} bài)`;
+    case 'needSignIn':
+      return 'Cần đăng nhập Google để dùng playlist';
+    case 'noPlaylist':
+      return s.query
+        ? `Bạn chưa có playlist "${s.query}"`
+        : 'Không tìm thấy playlist';
   }
   const why =
     s.errorCode === 'FORBIDDEN'
@@ -187,5 +238,14 @@ export function djText(r: DjReply): string {
         : 'Mình chưa làm được việc này, bạn thử lại sau nhé.';
     case 'other':
       return 'Mình chưa giúp được việc này. Thử: "bật vài bài chill", "bài mới của Đen Vâu", "còn bao lâu tới bài của tôi".';
+    case 'chat':
+      return r.chatReply ?? '';
+    case 'clarify': {
+      const q = CLARIFY[r.clarify?.about ?? 'whichSong'];
+      const opts = r.clarify?.options?.length
+        ? ` ${r.clarify.options.map((o) => `"${o}"`).join(', ')}`
+        : '';
+      return q + opts;
+    }
   }
 }

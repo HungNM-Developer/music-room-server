@@ -62,6 +62,14 @@ export const DJ_ACTIONS = [
   'vote',
   'pause',
   'resume',
+  /** Songs shown, not added ("gợi ý bài của …"). */
+  'suggest',
+  /** "Lưu" the song on air (the asker's saved songs). */
+  'save',
+  /** The asker's own playlists (signed in). */
+  'playlistSave',
+  'playlistCreate',
+  'playlistPlay',
 ] as const;
 export type DjAction = (typeof DJ_ACTIONS)[number];
 
@@ -76,7 +84,21 @@ export type DjStepReason =
   /** heart: the only matches were the asker's own songs. */
   | 'ownSong'
   /** add: more songs asked for than one request brings (`wanted`); `got` = that limit. */
-  | 'tooMany';
+  | 'tooMany'
+  /** remove: songs kept ("trừ / chừa …", or not sure they are by the kept artist): `tracks`. */
+  | 'kept'
+  /** playlist steps: no Google account behind the asker. */
+  | 'needSignIn'
+  /** playlist steps: no playlist of the asker matches `query` (or several match equally). */
+  | 'noPlaylist';
+
+/** What the DJ asks back when a request is too vague to act on. */
+export const DJ_CLARIFY = [
+  'removeScope',
+  'whichSong',
+  'whichPlaylist',
+] as const;
+export type DjClarify = (typeof DJ_CLARIFY)[number];
 
 export interface DjStep {
   action: DjAction;
@@ -101,6 +123,19 @@ export interface DjStep {
   /** add, fewer than asked: how many went in of how many. */
   got?: number;
   wanted?: number;
+  /** suggest: the songs offered; remove `kept`: the songs kept. */
+  tracks?: TrackSummary[];
+  /** remove `kept`: how many of `tracks` were kept only because their artist is not certain. */
+  unsure?: number;
+  /** The artist as the DJ understood it (YouTube Music's name: "Jack - J97"). */
+  artist?: string;
+  /** playlist steps: the playlist; `created` = made by this request. */
+  playlist?: { id: string; name: string; created: boolean };
+  /** noPlaylist: the asker's playlists whose names come close (to ask which one). */
+  options?: string[];
+  /** playlistCreate / playlistPlay: songs saved / queued, out of `total`. */
+  added?: number;
+  total?: number;
 }
 
 export type DjReplyKind =
@@ -112,7 +147,11 @@ export type DjReplyKind =
   | 'other'
   | 'busy'
   | 'denied'
-  | 'error';
+  | 'error'
+  /** Small talk: `chatReply`, written by the AI (checked) or picked from the DJ's own lines. */
+  | 'chat'
+  /** Too vague to act on: the DJ asks back. */
+  | 'clarify';
 
 export interface DjReply {
   kind: DjReplyKind;
@@ -141,4 +180,8 @@ export interface DjReply {
   errorCode?: ErrorCode;
   errorParams?: ErrorParams;
   retryAfterSec?: number;
+  /** chat: shown as is to everyone (one language, the asker's). */
+  chatReply?: string;
+  /** clarify: what to ask, and the choices when there are some (playlist names…). */
+  clarify?: { about: DjClarify; options?: string[] };
 }

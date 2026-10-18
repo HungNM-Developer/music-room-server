@@ -4,6 +4,7 @@ import {
   normalizeQuery,
   parseYouTubeVideo,
 } from '../contracts';
+import type { Plan } from './dj-plan';
 
 /**
  * "@DJ" requests the rules understand on their own, without the AI (spec 2026-10-18-dj-chat):
@@ -188,7 +189,7 @@ const INTO_QUEUE = / vao (hang cho|danh sach( phat)?|list|queue|playlist)$/;
 /** How-to phrases (the DJ shows the button) in plain form, most specific first. */
 const GUIDES: [GuideTarget, RegExp][] = [
   // "chặn bài" only with its accent: "chán bài này" (bored of it) is the same without.
-  ['block', /(^| )(chan bai|block)( |$)/],
+  ['block', /(^| )(chan( mot| 1)? bai|block)( |$)/],
   ['lyrics', /(^| )(loi bai hat|loi bai|xem loi|lyrics?)( |$)/],
   ['listen', /(^| )(nghe cung|listen along)( |$)/],
   ['mini', /(^| )(thu nho|man hinh nho|mini player|mini|pip)( |$)/],
@@ -350,6 +351,74 @@ export function matchRules(request: string): RuleMatch | null {
   for (const [guide, re] of GUIDES)
     if (re.test(p) && guideOk(guide)) return { kind: 'guide', guide };
 
+  if (HELLO.test(p) && p.split(' ').length <= 6) return { kind: 'hello' };
+  return null;
+}
+
+// ------------------------------------------------------------ quick rules (spec 2026-10-18-dj-translator)
+
+export type QuickMatch =
+  | { kind: 'hello' }
+  | { kind: 'info'; info: InfoKind }
+  | { kind: 'guide'; guide: GuideTarget }
+  | { kind: 'plan'; plan: Plan };
+
+const QUICK_SKIP =
+  /^(skip|bo qua|qua bai|next|chuyen bai|doi bai|bai khac|bai tiep( theo)?)( (bai nay|bai|di))?( (\d+) bai)?$/;
+/** dj-plan MAX_SKIPS (not imported: dj-plan imports this file). */
+const MAX_QUICK_SKIPS = 5;
+const QUICK_SKIP_N = /^(skip|bo qua|qua) (\d+) bai$/;
+const QUICK_PAUSE =
+  /^(tam dung|dung nhac|dung lai|tat nhac|pause|stop)( (nhac|bai nay|lai))?$/;
+const QUICK_RESUME =
+  /^(phat tiep|tiep tuc( phat)?|resume|bat lai nhac|mo lai nhac|phat lai di)$/;
+const QUICK_SAVE = /^(luu|save)( (bai nay|bai dang phat|lai|bai))?$/;
+/** A question about how to do something ("làm sao…", "ở đâu", "how"). */
+const HOW =
+  /(^| )(lam sao|lam the nao|lam cach nao|cach|o dau|cho nao|nut nao|how( do| to| can)?)( |$)/;
+
+/**
+ * The short, certain requests the DJ handles without the AI: every word must belong to the
+ * pattern (polite words aside). Anything left over goes to the AI translator: never a guess.
+ */
+export function matchQuick(request: string): QuickMatch | null {
+  const original = request.trim().replace(/[?!.。…]+$/, '');
+  let p = plain(original);
+  if (!p) return { kind: 'hello' };
+  for (;;) {
+    const cut = (' ' + p)
+      .replace(FILLER_END, '')
+      .trim()
+      .replace(FILLER_START, '')
+      .trim();
+    if (cut === p || !cut) break;
+    p = cut;
+  }
+  if (QUICK_SKIP_N.test(p) || QUICK_SKIP.test(p)) {
+    const count = Number(/(\d+) bai$/.exec(p)?.[1] ?? 1);
+    return {
+      kind: 'plan',
+      plan: {
+        steps: [
+          { do: 'skip', count: Math.min(MAX_QUICK_SKIPS, Math.max(1, count)) },
+        ],
+      },
+    };
+  }
+  if (QUICK_PAUSE.test(p))
+    return { kind: 'plan', plan: { steps: [{ do: 'pause' }] } };
+  if (QUICK_RESUME.test(p))
+    return { kind: 'plan', plan: { steps: [{ do: 'resume' }] } };
+  if (QUICK_SAVE.test(p))
+    return { kind: 'plan', plan: { steps: [{ do: 'save' }] } };
+  const short = p.split(' ').length <= 10;
+  if (short && !ACTION_INSIDE.test(p) && !similarIn(original, p))
+    for (const [info, re] of INFOS)
+      if (re.test(p)) return { kind: 'info', info };
+  if (HOW.test(p))
+    for (const [guide, re] of GUIDES)
+      if (re.test(p) && (guide !== 'block' || /chặn|block/i.test(original)))
+        return { kind: 'guide', guide };
   if (HELLO.test(p) && p.split(' ').length <= 6) return { kind: 'hello' };
   return null;
 }

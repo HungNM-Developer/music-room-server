@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DjService } from '../ai/dj.service';
 import { AppError } from '../common/app-error';
 import {
+  ADD_MANY_MAX,
   type DjAction,
   type DjStep,
   type ErrorCode,
@@ -13,18 +14,22 @@ import { LibraryService } from '../library/library.service';
 import { InnerTubeProvider } from '../music/innertube.provider';
 import { SearchService } from '../music/search.service';
 import { PlaybackService } from '../playback/playback.service';
+import { PlaylistsService } from '../playlists/playlists.service';
 import { QueueService } from '../queue/queue.service';
 import type { Actor } from '../state/room-state.service';
 import { SnapshotService } from '../state/snapshot.service';
 import { etaSec } from './dj-eta';
+import { DjFinder } from './dj-find';
 import { findFresh } from './dj-fresh';
 import {
   MAX_SONGS,
+  type Find,
   type Pin,
   type Plan,
   type PlanStep,
   type Target,
 } from './dj-plan';
+import { DjResolver, selectTargets } from './dj-resolve';
 
 /** The song cannot go in, but the next candidate might. */
 const TRY_NEXT: ErrorCode[] = [
@@ -78,9 +83,26 @@ function failed(action: DjAction, e: unknown): DjStep {
   throw e;
 }
 
-function matches(item: QueueItemView, title: string): boolean {
-  const q = normalizeQuery(title);
-  return Boolean(q) && normalizeQuery(item.track.title).includes(q);
+/** Suggestions shown when the asker gave no number. */
+const SUGGEST_DEFAULT = 3;
+
+/**
+ * The asker's playlist with this name: the same name, else (not `exact`) the one playlist whose
+ * name holds what was said ("chill" → "Chill Vibes"; never "Chill 2" → "Chill").
+ */
+function playlistNamed<T extends { name: string }>(
+  lists: T[],
+  name: string,
+  exact = false,
+): { one: T | null; several: T[] } {
+  const q = normalizeQuery(name);
+  const same = lists.filter((l) => normalizeQuery(l.name) === q);
+  if (same.length) return { one: same[0], several: [] };
+  if (exact || q.length < 3) return { one: null, several: [] };
+  const near = lists.filter((l) => normalizeQuery(l.name).includes(q));
+  return near.length === 1
+    ? { one: near[0], several: [] }
+    : { one: null, several: near };
 }
 
 /**
@@ -98,6 +120,9 @@ export class DjComboService {
     private readonly search: SearchService,
     private readonly innertube: InnerTubeProvider,
     private readonly dj: DjService,
+    private readonly finder: DjFinder,
+    private readonly resolver: DjResolver,
+    private readonly playlists: PlaylistsService,
   ) {}
 
   async run(
@@ -130,13 +155,12 @@ export class DjComboService {
       });
     switch (s.do) {
       case 'add':
-        for (const title of s.titles)
-          await this.addSongs(run, this.searchIds(run, title), 1, {
-            pin: s.pin,
-            query: title,
-            exact: true,
-          });
-        return;
+        return this.findAndAdd(
+          run,
+          { titles: s.titles },
+          s.titles.length,
+          s.pin,
+        );
       case 'addArtist': {
         const { videos, verified } = await findFresh(
           { innertube: this.innertube, search: this.search },
@@ -199,22 +223,414 @@ export class DjComboService {
       case 'pause':
       case 'resume':
         return this.control(run, s.do);
+      case 'find':
+        return s.suggest
+          ? this.suggest(run, s.find, s.count)
+          : this.findAndAdd(run, s.find, s.count, s.pin);
+      case 'replaceWith':
+        return this.replaceWith(run, s.target, s.find);
+      case 'save':
+        return this.save(run);
+      case 'playlistSave':
+        return this.playlistSave(run, s.playlist);
+      case 'playlistCreate':
+        return this.playlistCreate(run, s.name, s.find, s.count ?? 1);
+      case 'playlistPlay':
+        return this.playlistPlay(run, s.playlist);
+    }
+  }
+
+  // ------------------------------------------------------------------ the AI translator's steps
+
+  /** Candidates as video ids; a real "newest / trending" lookup is noted on `opts`. */
+  private async *ids(
+    run: Run,
+    find: Find,
+    opts: { fresh?: 'latest' | 'popular' | null },
+  ): AsyncGenerator<string> {
+    for await (const c of this.finder.candidates(
+      run.me.id,
+      run.actor.roomId,
+      find,
+    )) {
+      if (c.fresh) opts.fresh = c.fresh;
+      yield c.externalId;
+    }
+  }
+
+  /** "thêm 3 bài của J97", "thêm Lạc Trôi và Nàng Thơ", "vài bài chill". */
+  private async findAndAdd(
+    run: Run,
+    find: Find,
+    count: number,
+    pin?: Pin,
+  ): Promise<void> {
+    const artist = (await this.finder.artistOf(find))?.name;
+    if (find.titles?.length) {
+      // Each named song on its own: one of each, that very song.
+      for (const title of find.titles) {
+        const opts: {
+          pin?: Pin;
+          query: string;
+          exact: boolean;
+          artist?: string;
+          fresh?: 'latest' | 'popular' | null;
+        } = { pin, query: title, exact: true, artist };
+        await this.addSongs(
+          run,
+          this.ids(run, { ...find, titles: [title] }, opts),
+          1,
+          opts,
+        );
+      }
+      return;
+    }
+    const opts: {
+      pin?: Pin;
+      query?: string;
+      fresh?: 'latest' | 'popular' | null;
+      artist?: string;
+    } = { pin, query: artist ?? find.mood, artist };
+    await this.addSongs(run, this.ids(run, find, opts), count, opts);
+  }
+
+  /** "gợi ý bài của J97": songs shown with an "add" button, nothing added. */
+  private async suggest(run: Run, find: Find, count: number): Promise<void> {
+    const want = Math.max(1, count || SUGGEST_DEFAULT);
+    const artist = (await this.finder.artistOf(find))?.name;
+    const queued = new Set(
+      (await this.queueNow(run)).map((q) => q.track.externalId),
+    );
+    const ids: string[] = [];
+    for await (const c of this.finder.candidates(
+      run.me.id,
+      run.actor.roomId,
+      find,
+    )) {
+      if (queued.has(c.externalId)) continue;
+      ids.push(c.externalId);
+      // A few spare: some cannot be shown (not embeddable, gone).
+      if (ids.length >= want + 2) break;
+    }
+    const tracks = ids.length
+      ? (await this.library.lookup(ids)).tracks.slice(0, want)
+      : [];
+    run.steps.push(
+      tracks.length
+        ? { action: 'suggest', ok: true, tracks, ...(artist ? { artist } : {}) }
+        : {
+            action: 'suggest',
+            ok: false,
+            reason: 'notFound',
+            ...this.asked(find, artist),
+          },
+    );
+  }
+
+  private asked(find: Find, artist?: string): { query?: string } {
+    const q = find.titles?.join(', ') ?? artist ?? find.mood;
+    return q ? { query: q.slice(0, 150) } : {};
+  }
+
+  /** The queue songs a target means (artists resolved on YouTube Music first). */
+  private async targets(run: Run, target: Target) {
+    const snap = await this.snapshots.build(run.actor.roomId);
+    // "của Đen" when someone in the room is called Đen: the picker, not the artist (spec).
+    const people = new Set(
+      (snap?.members ?? [])
+        .filter((m) => !m.isDevice)
+        .map((m) => normalizeQuery(m.displayName)),
+    );
+    const person = (n?: string) => Boolean(n && people.has(normalizeQuery(n)));
+    let t = target;
+    if (person(t.artist)) t = { ...t, by: t.artist, artist: undefined };
+    if (t.keep && person(t.keep.artist))
+      t = {
+        ...t,
+        keep: { ...t.keep, member: t.keep.artist, artist: undefined },
+      };
+    const [artist, keep] = await Promise.all([
+      t.artist ? this.resolver.artist(t.artist) : undefined,
+      t.keep?.artist ? this.resolver.artist(t.keep.artist) : undefined,
+    ]);
+    return {
+      ...selectTargets(snap?.queue ?? [], t, run.me, { artist, keep }),
+      artist: artist?.name,
+      keepArtist: keep?.name,
+    };
+  }
+
+  /** "Đổi bài A thành B": A from the queue (the asker's, or any for the admin), B found. */
+  private async replaceWith(run: Run, t: Target, find: Find): Promise<void> {
+    const admin = run.me.role === 'ADMIN';
+    // The AI cannot see the queue: A must be named (title or place), and exactly one song.
+    const named = Boolean(t.titles?.length || t.positions?.length);
+    const { items } = await this.targets(run, admin ? t : { ...t, mine: true });
+    const from = named && items.length === 1 ? items[0] : undefined;
+    if (!from) {
+      run.steps.push({
+        action: 'remove',
+        ok: false,
+        reason: 'notFound',
+        ...this.said(t),
+      });
+      return;
+    }
+    // B first: A is only removed once its replacement is in hand.
+    const ids: string[] = [];
+    for await (const c of this.finder.candidates(
+      run.me.id,
+      run.actor.roomId,
+      find,
+    )) {
+      ids.push(c.externalId);
+      if (ids.length >= 1 + SPARE_TRIES) break;
+    }
+    if (!ids.length) {
+      run.steps.push({
+        action: 'add',
+        ok: false,
+        reason: 'notFound',
+        ...this.asked(find),
+      });
+      return;
+    }
+    try {
+      await this.queue.remove(run.actor, from.id);
+      run.steps.push({
+        action: 'remove',
+        ok: true,
+        queueItemId: from.id,
+        track: from.track,
+      });
+    } catch (e) {
+      run.steps.push({ ...failed('remove', e), track: from.track });
+      return;
+    }
+    const artist = (await this.finder.artistOf(find))?.name;
+    await this.addSongs(run, ids, 1, {
+      query: find.titles?.[0] ?? artist,
+      exact: Boolean(find.titles?.length),
+      artist,
+    });
+  }
+
+  /** "Lưu bài này": the song on air into the asker's saved songs. */
+  private async save(run: Run): Promise<void> {
+    const np = (await this.snapshots.build(run.actor.roomId))?.nowPlaying;
+    if (!np) {
+      run.steps.push({ action: 'save', ok: false, reason: 'nothingPlaying' });
+      return;
+    }
+    try {
+      await this.library.setFavorite(run.actor, np.item.track.id, true);
+      run.steps.push({ action: 'save', ok: true, track: np.item.track });
+    } catch (e) {
+      run.steps.push({ ...failed('save', e), track: np.item.track });
+    }
+  }
+
+  /** The Google account behind the asker: this socket's, else the member's. */
+  private userOf(run: Run): string | null {
+    return run.actor.userId ?? run.me.userId ?? null;
+  }
+
+  /** The asker's playlist by name; pushes the answer itself when there is none to use. */
+  private async findPlaylist(
+    run: Run,
+    action: DjAction,
+    userId: string,
+    name: string,
+  ): Promise<{ id: string; name: string } | null | 'none'> {
+    const { one, several } = playlistNamed(
+      await this.playlists.mine(userId),
+      name,
+      // "Tạo playlist X": only X itself, never a playlist whose name merely holds it.
+      action === 'playlistCreate',
+    );
+    if (one) return one;
+    if (several.length) {
+      run.steps.push({
+        action,
+        ok: false,
+        reason: 'noPlaylist',
+        query: name,
+        options: several.map((l) => l.name).slice(0, 8),
+      });
+      return null;
+    }
+    return 'none';
+  }
+
+  /** "Lưu bài này vào playlist X": X is made when the asker has none by that name. */
+  private async playlistSave(run: Run, name: string): Promise<void> {
+    const userId = this.userOf(run);
+    if (!userId) {
+      run.steps.push({
+        action: 'playlistSave',
+        ok: false,
+        reason: 'needSignIn',
+      });
+      return;
+    }
+    const np = (await this.snapshots.build(run.actor.roomId))?.nowPlaying;
+    if (!np) {
+      run.steps.push({
+        action: 'playlistSave',
+        ok: false,
+        reason: 'nothingPlaying',
+      });
+      return;
+    }
+    const track = np.item.track;
+    try {
+      const found = await this.findPlaylist(run, 'playlistSave', userId, name);
+      if (found === null) return;
+      if (found === 'none') {
+        const id = await this.playlists.create(userId, name, [track.id]);
+        run.steps.push({
+          action: 'playlistSave',
+          ok: true,
+          track,
+          playlist: { id, name, created: true },
+        });
+        return;
+      }
+      await this.playlists.setTrack(userId, found.id, track.id, true);
+      run.steps.push({
+        action: 'playlistSave',
+        ok: true,
+        track,
+        playlist: { ...found, created: false },
+      });
+    } catch (e) {
+      run.steps.push({ ...failed('playlistSave', e), track });
+    }
+  }
+
+  /** "Tạo playlist X (gồm 5 bài của Đen)": songs go into the playlist, not the queue. */
+  private async playlistCreate(
+    run: Run,
+    name: string,
+    find: Find | undefined,
+    count: number,
+  ): Promise<void> {
+    const userId = this.userOf(run);
+    if (!userId) {
+      run.steps.push({
+        action: 'playlistCreate',
+        ok: false,
+        reason: 'needSignIn',
+      });
+      return;
+    }
+    try {
+      let trackIds: string[] = [];
+      if (find) {
+        const ids: string[] = [];
+        for await (const c of this.finder.candidates(
+          run.me.id,
+          run.actor.roomId,
+          find,
+        )) {
+          ids.push(c.externalId);
+          if (ids.length >= count + 2) break;
+        }
+        if (ids.length)
+          trackIds = (await this.library.lookup(ids)).tracks
+            .slice(0, count)
+            .map((t) => t.id);
+      }
+      const found = await this.findPlaylist(
+        run,
+        'playlistCreate',
+        userId,
+        name,
+      );
+      if (found === null) return;
+      const created = found === 'none';
+      const id = created
+        ? await this.playlists.create(userId, name, trackIds)
+        : found.id;
+      if (!created)
+        for (const t of trackIds)
+          await this.playlists.setTrack(userId, id, t, true);
+      run.steps.push({
+        action: 'playlistCreate',
+        ok: true,
+        playlist: { id, name: created ? name : found.name, created },
+        added: trackIds.length,
+        ...(find ? { total: count } : {}),
+        ...(find?.artist
+          ? { artist: (await this.finder.artistOf(find))?.name }
+          : {}),
+      });
+    } catch (e) {
+      run.steps.push(failed('playlistCreate', e));
+    }
+  }
+
+  /** "Phát playlist X": its songs into the queue, in order, as far as the asker's limit allows. */
+  private async playlistPlay(run: Run, name: string): Promise<void> {
+    const userId = this.userOf(run);
+    if (!userId) {
+      run.steps.push({
+        action: 'playlistPlay',
+        ok: false,
+        reason: 'needSignIn',
+      });
+      return;
+    }
+    try {
+      const found = await this.findPlaylist(run, 'playlistPlay', userId, name);
+      if (found === null) return;
+      if (found === 'none') {
+        run.steps.push({
+          action: 'playlistPlay',
+          ok: false,
+          reason: 'noPlaylist',
+          query: name,
+        });
+        return;
+      }
+      const list = await this.playlists.get(userId, { id: found.id });
+      const ids = list.tracks.map((t) => t.id).slice(0, ADD_MANY_MAX);
+      if (!ids.length) {
+        run.steps.push({
+          action: 'playlistPlay',
+          ok: false,
+          reason: 'notFound',
+          playlist: { ...found, created: false },
+        });
+        return;
+      }
+      const r = await this.queue.addMany(run.actor, ids);
+      // Why it stopped: the queue limit first (it needs its number), else the first reason.
+      const why =
+        r.skipped.find((x) => x.reason === 'QUEUE_LIMIT') ?? r.skipped[0];
+      const max = (await this.snapshots.build(run.actor.roomId))?.room.settings
+        .maxQueuedPerMember;
+      run.steps.push({
+        action: 'playlistPlay',
+        ok: r.added > 0,
+        playlist: { ...found, created: false },
+        added: r.added,
+        total: list.tracks.length,
+        ...(r.added === 0 && why
+          ? {
+              errorCode: why.reason,
+              ...(why.reason === 'QUEUE_LIMIT' && max
+                ? { errorParams: { max } }
+                : {}),
+            }
+          : {}),
+      });
+    } catch (e) {
+      run.steps.push(failed('playlistPlay', e));
     }
   }
 
   // ------------------------------------------------------------------ adding
-
-  /** A song by name: results whose title holds the name first ("Một Nhà" before "MỘT ft …"). */
-  private async *searchIds(run: Run, query: string): AsyncGenerator<string> {
-    const { results } = await this.search.search(run.me.id, query);
-    const q = normalizeQuery(query);
-    const named = (title: string) => normalizeQuery(title).includes(q);
-    const ranked = [
-      ...results.filter((r) => named(r.title)),
-      ...results.filter((r) => !named(r.title)),
-    ];
-    for (const r of ranked.slice(0, 3)) yield r.externalId;
-  }
 
   /** Lazily: the next pick is looked up only when the previous one could not go in. */
   private async *pickIds(
@@ -246,6 +662,8 @@ export class DjComboService {
       fresh?: 'latest' | 'popular' | null;
       /** Asked for by name (see TRY_NEXT_EXACT). */
       exact?: boolean;
+      /** The artist as understood (YouTube Music's name), for the answer. */
+      artist?: string;
     },
   ): Promise<void> {
     if (run.full) return;
@@ -266,6 +684,7 @@ export class DjComboService {
           ...step,
           ...(wish ? { wish } : {}),
           fresh: opts.fresh ?? null,
+          ...(opts.artist ? { artist: opts.artist } : {}),
         });
         if (opts.pin && added === 1 && step.position !== 0)
           await this.pin(run, queueItemId, step, opts.pin === 'now');
@@ -287,6 +706,7 @@ export class DjComboService {
         ok: false,
         reason: 'notFound',
         ...(opts.query ? { query: opts.query } : {}),
+        ...(opts.artist ? { artist: opts.artist } : {}),
         // "2 bài chill" but only one could go in.
         ...(added ? { got: added, wanted: count } : {}),
       });
@@ -369,41 +789,6 @@ export class DjComboService {
     return (await this.snapshots.build(run.actor.roomId))?.queue ?? [];
   }
 
-  /**
-   * The queue songs a heart / remove / pin means, in queue order: the filters (whose, which
-   * titles, except…), then the place among what is left ("bài số 2", "2 bài cuối").
-   */
-  private pick(queue: QueueItemView[], t: Target, me: Member): QueueItemView[] {
-    let items = queue;
-    if (t.mine) items = items.filter((q) => q.addedBy?.id === me.id);
-    if (t.others) items = items.filter((q) => q.addedBy?.id !== me.id);
-    if (t.by) {
-      const who = normalizeQuery(t.by);
-      items = items.filter((q) =>
-        normalizeQuery(q.addedBy?.displayName ?? '').includes(who),
-      );
-    }
-    if (t.titles?.length)
-      items = items.filter((q) => t.titles!.some((title) => matches(q, title)));
-    if (t.except?.length)
-      items = items.filter(
-        (q) => !t.except!.some((title) => matches(q, title)),
-      );
-    if (t.positions?.length) {
-      const all = items;
-      items = [
-        ...new Set(
-          t.positions
-            .map((n) => all[n > 0 ? n - 1 : all.length + n])
-            .filter((q): q is QueueItemView => Boolean(q)),
-        ),
-      ];
-    }
-    if (t.first) items = items.slice(0, t.first);
-    if (t.last) items = items.slice(-t.last);
-    return items;
-  }
-
   /** What was asked for, when nothing in the queue matches it. */
   private said(t: Target): { query?: string } {
     const q = t.said ?? t.titles?.join(', ');
@@ -412,7 +797,7 @@ export class DjComboService {
 
   /** One heart per member in this room (QueueService.heart moves it): the first match gets it. */
   private async heart(run: Run, t: Target): Promise<void> {
-    const matched = this.pick(await this.queueNow(run), t, run.me);
+    const { items: matched } = await this.targets(run, t);
     // The picker cannot heart their own songs (QueueService.heart refuses: OWN_SONG).
     const items = matched.filter((q) => q.addedBy?.id !== run.me.id);
     const first = items[0];
@@ -449,7 +834,7 @@ export class DjComboService {
       run.steps.push({
         ...base,
         ok: true,
-        ...(items.length > 1 || t.all || t.by || t.mine || t.others
+        ...(items.length > 1 || t.all || t.by || t.mine || t.others || t.artist
           ? { reason: 'oneHeart' as const }
           : {}),
       });
@@ -459,13 +844,30 @@ export class DjComboService {
   }
 
   private async remove(run: Run, t: Target): Promise<void> {
-    const items = this.pick(await this.queueNow(run), t, run.me);
+    const { items, kept, unsure, artist, keepArtist } = await this.targets(
+      run,
+      t,
+    );
+    // "Trừ / chừa …": what was kept is part of the answer, removed or not.
+    const keptStep = (): void => {
+      if (kept.length)
+        run.steps.push({
+          action: 'remove',
+          ok: true,
+          reason: 'kept',
+          tracks: kept.map((q) => q.track),
+          ...(unsure ? { unsure } : {}),
+          ...(keepArtist ? { artist: keepArtist } : {}),
+        });
+    };
     if (!items.length) {
+      if (kept.length) return keptStep();
       run.steps.push({
         action: 'remove',
         ok: false,
         reason: 'notFound',
         ...this.said(t),
+        ...(artist ? { artist } : {}),
       });
       return;
     }
@@ -493,40 +895,12 @@ export class DjComboService {
         reason: 'notMine',
         ...(others.length === 1 ? { track: others[0].track } : {}),
       });
+    keptStep();
   }
 
-  /** "Đổi bài X của tôi thành Y": remove my X, add Y (with the request's wish, if any). */
-  private async replace(run: Run, from: string, to: string): Promise<void> {
-    const mine = this.pick(
-      await this.queueNow(run),
-      { mine: true, titles: [from] },
-      run.me,
-    );
-    if (!mine[0]) {
-      run.steps.push({
-        action: 'remove',
-        ok: false,
-        reason: 'notFound',
-        query: from,
-      });
-      return;
-    }
-    try {
-      await this.queue.remove(run.actor, mine[0].id);
-      run.steps.push({
-        action: 'remove',
-        ok: true,
-        queueItemId: mine[0].id,
-        track: mine[0].track,
-      });
-    } catch (e) {
-      run.steps.push({ ...failed('remove', e), track: mine[0].track });
-      return;
-    }
-    await this.addSongs(run, this.searchIds(run, to), 1, {
-      query: to,
-      exact: true,
-    });
+  /** "Đổi bài X của tôi thành Y" (the old rules): the same checks as the translator's. */
+  private replace(run: Run, from: string, to: string): Promise<void> {
+    return this.replaceWith(run, { titles: [from] }, { titles: [to] });
   }
 
   /**
@@ -534,7 +908,7 @@ export class DjComboService {
    * A song asked for by name that is not queued yet is added there instead.
    */
   private async pinTarget(run: Run, t: Target, now: boolean): Promise<void> {
-    const item = this.pick(await this.queueNow(run), t, run.me)[0];
+    const item = (await this.targets(run, t)).items[0];
     if (item) {
       const step: DjStep = {
         action: 'pin',
@@ -547,11 +921,12 @@ export class DjComboService {
     const title =
       t.titles?.length === 1 && !t.by && !t.mine ? t.titles[0] : null;
     if (title)
-      return this.addSongs(run, this.searchIds(run, title), 1, {
-        pin: now ? 'now' : 'next',
-        query: title,
-        exact: true,
-      });
+      return this.findAndAdd(
+        run,
+        { titles: [title], ...(t.artist ? { artist: t.artist } : {}) },
+        1,
+        now ? 'now' : 'next',
+      );
     run.steps.push({
       action: 'pin',
       ok: false,

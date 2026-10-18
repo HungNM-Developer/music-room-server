@@ -34,6 +34,21 @@ export interface Target {
   last?: number;
   /** As asked, for "not found". */
   said?: string;
+  /** Songs by this artist (resolved to YouTube Music's name before matching). */
+  artist?: string;
+  /** Kept out of the matches ("trừ / chừa bài của J97"). */
+  keep?: { artist?: string; titles?: string[]; member?: string };
+}
+
+/** Songs to look for on YouTube (the AI translator's "find"; dj-find). */
+export interface Find {
+  titles?: string[];
+  artist?: string;
+  mode?: 'top' | 'latest' | 'popular' | 'similar_now' | 'mood';
+  mood?: string;
+  /** mode "mood" only: songs the AI named, each checked on YouTube Music before use. */
+  picks?: { artist: string; song: string }[];
+  exclude?: { titles?: string[]; artist?: string };
 }
 
 export type PlanStep =
@@ -64,7 +79,22 @@ export type PlanStep =
   | { do: 'replace'; from: string; to: string }
   | { do: 'skip'; count?: number }
   | { do: 'pause' }
-  | { do: 'resume' };
+  | { do: 'resume' }
+  /** The AI translator's add / suggest: songs found by DjFinder. */
+  | {
+      do: 'find';
+      find: Find;
+      count: number;
+      suggest?: boolean;
+      pin?: Pin;
+      asked?: number;
+    }
+  /** "Đổi bài A thành B": A from the queue, B found on YouTube. */
+  | { do: 'replaceWith'; target: Target; find: Find }
+  | { do: 'save' }
+  | { do: 'playlistSave'; playlist: string }
+  | { do: 'playlistCreate'; name: string; find?: Find; count?: number }
+  | { do: 'playlistPlay'; playlist: string };
 
 export interface Plan {
   steps: PlanStep[];
@@ -76,7 +106,7 @@ export interface Plan {
 export const MAX_SONGS = 5;
 const SOME = 3;
 /** Songs one "bỏ qua N bài" may skip. */
-const MAX_SKIPS = 5;
+export const MAX_SKIPS = 5;
 
 type Verb =
   | 'add'
@@ -738,13 +768,13 @@ export function planCombo(request: string): Plan | null {
 
 // ------------------------------------------------------------------ the AI's plan
 
-const str = (v: unknown, max: number): string | undefined =>
+export const str = (v: unknown, max: number): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined;
-const int = (v: unknown, max: number): number | undefined =>
+export const int = (v: unknown, max: number): number | undefined =>
   typeof v === 'number' && Number.isFinite(v)
     ? Math.max(1, Math.min(max, Math.round(v)))
     : undefined;
-const strs = (v: unknown, max: number): string[] | undefined => {
+export const strs = (v: unknown, max: number): string[] | undefined => {
   if (!Array.isArray(v)) return undefined;
   const out = v.map((x) => str(x, 150)).filter((x): x is string => Boolean(x));
   return out.length ? out.slice(0, max) : undefined;

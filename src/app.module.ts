@@ -12,6 +12,8 @@ import { AiService } from './ai/ai.service';
 import { DjService } from './ai/dj.service';
 import { DjBrainService } from './dj/dj-brain.service';
 import { DjComboService } from './dj/dj-combo.service';
+import { DjFinder } from './dj/dj-find';
+import { DjResolver } from './dj/dj-resolve';
 import { McService } from './ai/mc.service';
 import { ModerationService } from './ai/moderation.service';
 import { LastFmService } from './music/lastfm.service';
@@ -84,6 +86,8 @@ export class AppModule {
         DjService,
         DjBrainService,
         DjComboService,
+        DjResolver,
+        DjFinder,
         WishWriterService,
         LastFmService,
         TrackMetaService,
