@@ -313,3 +313,4 @@ Của tôi (người dùng kiểm khi đọc):
 - Việc đơn đúng một nút của Hướng dẫn (bỏ qua 1 bài, tạm dừng / phát tiếp, lưu bài đang phát, thả tim / gỡ / ghim một bài) → chỉ nút, không làm. Nhiều việc, bỏ qua nhiều bài, tìm và thêm bài, nhiều bài một lúc, playlist, "phát ngay bài X" vẫn do DJ làm.
 - Tên ca sĩ chấp nhận lỗi gõ nhỏ ("ryhder" → RHYDER); tìm theo ca sĩ cần một nghệ sĩ được ghi công trùng tên ("Wave Rhyder" không phải RHYDER).
 - "Lưu" nhận cả bài trong hàng chờ (vào bài đã lưu hoặc một playlist).
+- Slack không có spotlight: việc đơn một nút hỏi qua Slack (`@Music Room …`, `/music …`) được DJ làm luôn; câu hỏi cách dùng vẫn được trả lời bằng chữ.
