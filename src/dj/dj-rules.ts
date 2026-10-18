@@ -469,7 +469,14 @@ export function matchQuick(request: string): QuickMatch | null {
   if (QUICK_SAVE.test(p))
     return { kind: 'plan', plan: { steps: [{ do: 'save' }] } };
   const short = p.split(' ').length <= 10;
-  if (short && !ACTION_INSIDE.test(p) && !similarIn(original, p))
+  // A question about the room asks something ("còn mấy bài", "tên gì", "ai chọn"…):
+  // "cho cả playlist Chill vào hàng chờ" names the queue but asks nothing.
+  const asks =
+    request.includes('?') ||
+    /(^| )(bao nhieu|may|gi|nao|ai|bao gio|khi nao|bao lau|chua|khong|what('s)?|who|when|how many|how long)( |$)/.test(
+      p,
+    );
+  if (short && asks && !ACTION_INSIDE.test(p) && !similarIn(original, p))
     for (const [info, re] of INFOS)
       if (re.test(p)) return { kind: 'info', info };
   if (HOW.test(p))

@@ -5,6 +5,7 @@
  *   npm run dj:eval                  every case
  *   npm run dj:eval -- --only xoá    cases whose text holds "xoá"
  *   npm run dj:eval -- --fresh       ignore the AI answer cache
+ *   npm run dj:eval -- --cached      only cases whose AI answer is cached (no AI call at all)
  *
  * Uses the free AI keys of .env (Gemini, then Groq). AI answers are cached per prompt and
  * sentence in node_modules/.cache, so a re-run only asks for what changed. Nothing is done in
@@ -17,6 +18,7 @@ import { config } from 'dotenv';
 import { AiService } from '../../src/ai/ai.service';
 import { parseEnv } from '../../src/config/env';
 import { normalizeQuery } from '../../src/contracts';
+import type { PlanStep } from '../../src/dj/dj-plan';
 import {
   type AiCall,
   type Decision,
@@ -53,6 +55,10 @@ const DELAY_MS = Number(process.env.DJ_EVAL_DELAY_MS ?? 13_000);
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const fresh = args.includes('--fresh');
+const cachedOnly = args.includes('--cached');
+
+/** A case the AI was not asked about (`--cached`, no cached answer): left out of the score. */
+class Skipped extends Error {}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const norm = (v: unknown) => normalizeQuery(String(v));
@@ -108,11 +114,43 @@ function forbidden(d: Decision, kinds: string[] = []): string | null {
   return bad ? `forbidden step "${bad.do}"` : null;
 }
 
-/** The decision as the expectations are written (plans flattened to their steps). */
+/**
+ * The decision as the expectations are written: plans flattened to their steps, and songs named
+ * one by one ("thêm A và B" read as two adds) joined into one add, the way the executor treats
+ * them: either form is the same request.
+ */
 function shape(d: Decision): unknown {
-  return d.kind === 'plan'
-    ? { kind: 'plan', steps: d.plan.steps, wish: d.plan.wish }
-    : d;
+  if (d.kind !== 'plan') return d;
+  const steps: PlanStep[] = [];
+  for (const s of d.plan.steps) {
+    const prev = steps[steps.length - 1];
+    const titlesOnly = (x: PlanStep) =>
+      x.do === 'find' &&
+      !x.suggest &&
+      Boolean(x.find.titles?.length) &&
+      !x.find.artist &&
+      !x.find.mode &&
+      !x.find.exclude;
+    if (
+      prev?.do === 'find' &&
+      s.do === 'find' &&
+      titlesOnly(prev) &&
+      titlesOnly(s) &&
+      prev.pin === s.pin
+    ) {
+      steps[steps.length - 1] = {
+        ...prev,
+        find: {
+          ...prev.find,
+          titles: [...prev.find.titles!, ...s.find.titles!],
+        },
+        count: prev.count + s.count,
+      };
+      continue;
+    }
+    steps.push(s);
+  }
+  return { kind: 'plan', steps, wish: d.plan.wish };
 }
 
 async function main(): Promise<void> {
@@ -140,6 +178,7 @@ async function main(): Promise<void> {
       .update(user)
       .digest('hex');
     if (key in cache) return { ok: true, raw: cache[key] };
+    if (cachedOnly) throw new Skipped();
     for (let attempt = 0; attempt < 4; attempt++) {
       const wait = lastCall + DELAY_MS - Date.now();
       if (wait > 0) await sleep(wait);
@@ -165,14 +204,22 @@ async function main(): Promise<void> {
   );
   const failed: { text: string; why: string; got: unknown; note?: string }[] =
     [];
+  let skipped = 0;
   for (const [i, c] of cases.entries()) {
     const room = c.members ? { ...suite.room, members: c.members } : suite.room;
-    const d = await interpret({
-      request: c.text,
-      room,
-      platform: c.platform ?? 'room',
-      ai: aiCall,
-    });
+    let d: Decision;
+    try {
+      d = await interpret({
+        request: c.text,
+        room,
+        platform: c.platform ?? 'room',
+        ai: aiCall,
+      });
+    } catch (e) {
+      if (!(e instanceof Skipped)) throw e;
+      skipped++;
+      continue;
+    }
     const why = forbidden(d, c.forbid) ?? matches(shape(d), c.expect);
     const tag = why ? 'FAIL' : 'ok  ';
     console.log(
@@ -186,14 +233,16 @@ async function main(): Promise<void> {
         ...(c.note ? { note: c.note } : {}),
       });
   }
-  const passed = cases.length - failed.length;
+  const scored = cases.length - skipped;
+  const passed = scored - failed.length;
+  if (skipped) console.log(`\n${skipped} skipped (no cached AI answer)`);
   console.log(
-    `\n${passed}/${cases.length} correct (${Math.round((passed / Math.max(1, cases.length)) * 100)}%)`,
+    `\n${passed}/${scored} correct (${Math.round((passed / Math.max(1, scored)) * 100)}%)`,
   );
   writeFileSync(
     REPORT_FILE,
     JSON.stringify(
-      { at: new Date().toISOString(), passed, total: cases.length, failed },
+      { at: new Date().toISOString(), passed, total: scored, skipped, failed },
       null,
       2,
     ),
