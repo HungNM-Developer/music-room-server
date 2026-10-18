@@ -18,7 +18,13 @@ import type { Actor } from '../state/room-state.service';
 import { SnapshotService } from '../state/snapshot.service';
 import { etaSec } from './dj-eta';
 import { findFresh } from './dj-fresh';
-import type { Pin, Plan, PlanStep, Target } from './dj-plan';
+import {
+  MAX_SONGS,
+  type Pin,
+  type Plan,
+  type PlanStep,
+  type Target,
+} from './dj-plan';
 
 /** The song cannot go in, but the next candidate might. */
 const TRY_NEXT: ErrorCode[] = [
@@ -113,6 +119,15 @@ export class DjComboService {
   }
 
   private async step(run: Run, s: PlanStep): Promise<void> {
+    // "thêm 10 bài": up to MAX_SONGS, and the answer says so.
+    if ('asked' in s && s.asked)
+      run.steps.push({
+        action: 'add',
+        ok: false,
+        reason: 'tooMany',
+        got: MAX_SONGS,
+        wanted: s.asked,
+      });
     switch (s.do) {
       case 'add':
         for (const title of s.titles)
@@ -151,6 +166,10 @@ export class DjComboService {
           query: s.text,
         });
       }
+      case 'addPicks':
+        return this.addSongs(run, this.pickIds(run, s.picks), s.picks.length, {
+          pin: s.pin,
+        });
       case 'addFrom': {
         const tracks =
           s.source === 'played'
@@ -169,10 +188,14 @@ export class DjComboService {
         return this.heart(run, s.target);
       case 'remove':
         return this.remove(run, s.target);
+      case 'pin':
+        return this.pinTarget(run, s.target, Boolean(s.now));
       case 'replace':
         return this.replace(run, s.from, s.to);
       case 'skip':
-        return this.skip(run);
+        for (let i = 0; i < (s.count ?? 1); i++)
+          if (!(await this.skip(run))) return;
+        return;
       case 'pause':
       case 'resume':
         return this.control(run, s.do);
@@ -300,7 +323,21 @@ export class DjComboService {
     now: boolean,
   ): Promise<void> {
     try {
-      await this.queue.pinNext(run.actor, queueItemId);
+      const queue = await this.queueNow(run);
+      const at = queue.findIndex((q) => q.id === queueItemId);
+      // Pinned songs play in the order they were pinned: to play this one now, the ones pinned
+      // before it step back behind it (unpinned, then pinned again: still next after it).
+      const ahead = now
+        ? queue.slice(0, Math.max(0, at)).filter((q) => q.pinned)
+        : [];
+      for (const q of ahead) await this.queue.pinNext(run.actor, q.id);
+      // pinNext toggles: a song pinned already stays pinned.
+      if (!queue[at]?.pinned) await this.queue.pinNext(run.actor, queueItemId);
+      if (ahead.length) {
+        // A later pin time than this song's, so they stay behind it.
+        await new Promise((r) => setTimeout(r, 2));
+        for (const q of ahead) await this.queue.pinNext(run.actor, q.id);
+      }
       if (now) {
         const snap = await this.snapshots.build(run.actor.roomId);
         const np = snap?.nowPlaying;
@@ -321,6 +358,7 @@ export class DjComboService {
       run.steps.push({
         ...failed('pin', e),
         ...(added.track ? { track: added.track } : {}),
+        now,
       });
     }
   }
@@ -331,10 +369,14 @@ export class DjComboService {
     return (await this.snapshots.build(run.actor.roomId))?.queue ?? [];
   }
 
-  /** The queue songs a heart / remove means, in queue order. */
+  /**
+   * The queue songs a heart / remove / pin means, in queue order: the filters (whose, which
+   * titles, except…), then the place among what is left ("bài số 2", "2 bài cuối").
+   */
   private pick(queue: QueueItemView[], t: Target, me: Member): QueueItemView[] {
     let items = queue;
     if (t.mine) items = items.filter((q) => q.addedBy?.id === me.id);
+    if (t.others) items = items.filter((q) => q.addedBy?.id !== me.id);
     if (t.by) {
       const who = normalizeQuery(t.by);
       items = items.filter((q) =>
@@ -343,8 +385,29 @@ export class DjComboService {
     }
     if (t.titles?.length)
       items = items.filter((q) => t.titles!.some((title) => matches(q, title)));
+    if (t.except?.length)
+      items = items.filter(
+        (q) => !t.except!.some((title) => matches(q, title)),
+      );
+    if (t.positions?.length) {
+      const all = items;
+      items = [
+        ...new Set(
+          t.positions
+            .map((n) => all[n > 0 ? n - 1 : all.length + n])
+            .filter((q): q is QueueItemView => Boolean(q)),
+        ),
+      ];
+    }
+    if (t.first) items = items.slice(0, t.first);
     if (t.last) items = items.slice(-t.last);
     return items;
+  }
+
+  /** What was asked for, when nothing in the queue matches it. */
+  private said(t: Target): { query?: string } {
+    const q = t.said ?? t.titles?.join(', ');
+    return q ? { query: q.slice(0, 150) } : {};
   }
 
   /** One heart per member in this room (QueueService.heart moves it): the first match gets it. */
@@ -366,7 +429,7 @@ export class DjComboService {
               action: 'heart',
               ok: false,
               reason: 'notFound',
-              ...(t.titles ? { query: t.titles.join(', ') } : {}),
+              ...this.said(t),
             },
       );
       return;
@@ -386,7 +449,7 @@ export class DjComboService {
       run.steps.push({
         ...base,
         ok: true,
-        ...(items.length > 1 || t.all || t.by || t.mine
+        ...(items.length > 1 || t.all || t.by || t.mine || t.others
           ? { reason: 'oneHeart' as const }
           : {}),
       });
@@ -402,7 +465,7 @@ export class DjComboService {
         action: 'remove',
         ok: false,
         reason: 'notFound',
-        ...(t.titles ? { query: t.titles.join(', ') } : {}),
+        ...this.said(t),
       });
       return;
     }
@@ -466,14 +529,45 @@ export class DjComboService {
     });
   }
 
+  /**
+   * "Ghim bài số 3" (next) / "skip đến bài cuối", "chuyển sang Lạc Trôi" (now): control rights.
+   * A song asked for by name that is not queued yet is added there instead.
+   */
+  private async pinTarget(run: Run, t: Target, now: boolean): Promise<void> {
+    const item = this.pick(await this.queueNow(run), t, run.me)[0];
+    if (item) {
+      const step: DjStep = {
+        action: 'pin',
+        ok: true,
+        queueItemId: item.id,
+        track: item.track,
+      };
+      return this.pin(run, item.id, step, now);
+    }
+    const title =
+      t.titles?.length === 1 && !t.by && !t.mine ? t.titles[0] : null;
+    if (title)
+      return this.addSongs(run, this.searchIds(run, title), 1, {
+        pin: now ? 'now' : 'next',
+        query: title,
+        exact: true,
+      });
+    run.steps.push({
+      action: 'pin',
+      ok: false,
+      reason: 'notFound',
+      ...this.said(t),
+    });
+  }
+
   // ------------------------------------------------------------------ playback
 
-  /** Control rights skip at once; everyone else votes. */
-  private async skip(run: Run): Promise<void> {
+  /** Control rights skip at once; everyone else votes. false = no further skip makes sense. */
+  private async skip(run: Run): Promise<boolean> {
     const np = (await this.snapshots.build(run.actor.roomId))?.nowPlaying;
     if (!np) {
       run.steps.push({ action: 'skip', ok: false, reason: 'nothingPlaying' });
-      return;
+      return false;
     }
     const control = run.me.role === 'ADMIN' || run.me.canControl;
     const action = control ? 'skip' : 'vote';
@@ -485,8 +579,11 @@ export class DjComboService {
         });
       else await this.playback.voteSkip(run.actor, np.item.id);
       run.steps.push({ action, ok: true, track: np.item.track });
+      // A vote is one per song: "bỏ qua 3 bài" votes on the song on air only.
+      return control;
     } catch (e) {
       run.steps.push({ ...failed(action, e), track: np.item.track });
+      return false;
     }
   }
 
