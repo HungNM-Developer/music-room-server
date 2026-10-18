@@ -17,6 +17,15 @@ export interface FoundVideo {
   thumbnailUrl: string | null;
 }
 
+/** A song as YouTube Music knows it (title and artists are YouTube Music's own). */
+export interface MusicSong {
+  externalId: string;
+  title: string;
+  /** The artists joined with ", " ("Sơn Tùng M-TP"). */
+  artist: string;
+  durationSec: number | null;
+}
+
 /** Failures in a row before InnerTube is left alone for a while. */
 export const INNERTUBE_MAX_FAILURES = 3;
 export const INNERTUBE_COOLDOWN_MS = 30 * 60_000;
@@ -189,6 +198,87 @@ export class InnerTubeProvider {
     }
   }
 
+  /**
+   * The artist YouTube Music finds first for a name the user typed ("j97" → "Jack - J97"), when
+   * the two names share a word; null when there is no such artist. Throws on failure.
+   */
+  async musicArtist(name: string): Promise<{ name: string } | null> {
+    return this.counted(async () => {
+      const yt = await this.session();
+      const res = await withTimeout(
+        yt.music.search(name, { type: 'artist' }),
+        HTTP_TIMEOUT_MS,
+      );
+      const first = (res.contents ?? [])
+        .flatMap((s) => (s as { contents?: unknown[] }).contents ?? [])
+        .map((x) => x as { item_type?: string; name?: string })
+        .find((x) => x.item_type === 'artist' && x.name);
+      if (!first?.name) return null;
+      return sharesWord(first.name, name) ? { name: first.name } : null;
+    });
+  }
+
+  /** Songs (not videos) on YouTube Music, in its order: official audio of the real artist. Throws on failure. */
+  async musicSongs(query: string, max: number): Promise<MusicSong[]> {
+    return this.counted(async () => {
+      const yt = await this.session();
+      const res = await withTimeout(
+        yt.music.search(query, { type: 'song' }),
+        HTTP_TIMEOUT_MS,
+      );
+      const out: MusicSong[] = [];
+      for (const s of res.contents ?? [])
+        for (const x of (s as { contents?: unknown[] }).contents ?? []) {
+          const it = x as {
+            item_type?: string;
+            id?: string;
+            title?: string;
+            artists?: { name?: string }[];
+            duration?: { seconds?: number };
+          };
+          if (
+            it.item_type !== 'song' ||
+            !it.id ||
+            !VIDEO_ID.test(it.id) ||
+            !it.title
+          )
+            continue;
+          const seconds = it.duration?.seconds ?? 0;
+          out.push({
+            externalId: it.id,
+            title: it.title,
+            artist: (it.artists ?? [])
+              .map((a) => a.name)
+              .filter(Boolean)
+              .join(', '),
+            durationSec: seconds > 0 ? seconds : null,
+          });
+          if (out.length >= max) return out;
+        }
+      return out;
+    });
+  }
+
+  /** Same failure counting as `search`: repeated failures rest InnerTube for a while. */
+  private async counted<T>(run: () => Promise<T>): Promise<T> {
+    if (!this.available) throw new Error('InnerTube: resting');
+    try {
+      const r = await run();
+      this.failures = 0;
+      return r;
+    } catch (e) {
+      this.client = null;
+      if (++this.failures >= INNERTUBE_MAX_FAILURES) {
+        this.failures = 0;
+        this.offUntil = Date.now() + INNERTUBE_COOLDOWN_MS;
+        this.logger.warn(
+          `InnerTube failing, off for ${INNERTUBE_COOLDOWN_MS / 60_000} min: ${String(e)}`,
+        );
+      }
+      throw e;
+    }
+  }
+
   private session(): Promise<Innertube> {
     // youtubei.js is ESM-only: loaded on first use with a real dynamic import.
     this.client ??= import('youtubei.js').then(({ Innertube }) =>
@@ -196,6 +286,22 @@ export class InnerTubeProvider {
     );
     return this.client;
   }
+}
+
+/** Two names share a word of 2+ letters (accents and case aside): "Jack - J97" / "j97". */
+function sharesWord(a: string, b: string): boolean {
+  const ws = (t: string) =>
+    new Set(
+      t
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .replace(/đ/gi, 'd')
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((w) => w.length >= 2),
+    );
+  const x = ws(a);
+  return [...ws(b)].some((w) => x.has(w));
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
