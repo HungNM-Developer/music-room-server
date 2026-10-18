@@ -41,6 +41,8 @@ const HOUR_MS = 3600_000;
 const MEMBERS_FOR_AI = 40;
 
 type Base = Pick<DjReply, 'forMemberId' | 'forName'>;
+/** Where "@DJ" was asked: the room page (spotlight) or Slack (no spotlight). */
+type Platform = 'room' | 'slack';
 
 /** One queue song named by title or place, nothing wider ("bài Lạc Trôi", "bài số 2"). */
 function oneSong(t: Target): boolean {
@@ -157,7 +159,15 @@ export class DjBrainService {
       );
   }
 
-  handle(input: { actor: Actor; request: string }): Promise<DjReply> {
+  /**
+   * `platform`: where the request was made. Slack has no spotlight, so a one-button task is
+   * done there; the room page shows the button instead.
+   */
+  handle(input: {
+    actor: Actor;
+    request: string;
+    platform?: Platform;
+  }): Promise<DjReply> {
     const key = input.actor.memberId;
     const before = this.running.get(key) ?? Promise.resolve();
     const next = before.catch(() => undefined).then(() => this.answer(input));
@@ -171,9 +181,11 @@ export class DjBrainService {
   private async answer({
     actor,
     request,
+    platform = 'room',
   }: {
     actor: Actor;
     request: string;
+    platform?: Platform;
   }): Promise<DjReply> {
     const me = await this.prisma.member.findUnique({
       where: { id: actor.memberId },
@@ -186,9 +198,9 @@ export class DjBrainService {
       return { ...base, kind: 'error', errorCode: 'UNAUTHENTICATED' };
     try {
       const quick = matchQuick(request);
-      if (quick) return await this.fromQuick(quick, me, actor, base);
+      if (quick) return await this.fromQuick(quick, me, actor, base, platform);
       if (!this.ai.enabled)
-        return await this.withoutAi(request, me, actor, base);
+        return await this.withoutAi(request, me, actor, base, platform);
       // Only requests that need the AI count against the free quota.
       const key = `dj-ai:${me.id}`;
       const r = this.limiter.hit(
@@ -198,7 +210,14 @@ export class DjBrainService {
         Date.now(),
       );
       if (!r.ok)
-        return await this.withoutAi(request, me, actor, base, r.retryAfterSec);
+        return await this.withoutAi(
+          request,
+          me,
+          actor,
+          base,
+          platform,
+          r.retryAfterSec,
+        );
       const raw = await this.ai.json<unknown>(
         'dj',
         TRANSLATE_SYSTEM,
@@ -212,7 +231,7 @@ export class DjBrainService {
       if (raw === null) {
         // Every provider resting: the asker's free quota is not spent.
         this.limiter.undo(key);
-        return await this.withoutAi(request, me, actor, base, 0);
+        return await this.withoutAi(request, me, actor, base, platform, 0);
       }
       const t = parseTranslation(raw);
       // "Làm sao để …": show where it is, never do it (the AI read it as a task).
@@ -229,7 +248,7 @@ export class DjBrainService {
       }
       switch (t.kind) {
         case 'plan':
-          return await this.combo(t.plan, me, actor, base);
+          return await this.combo(t.plan, me, actor, base, platform);
         case 'info':
           return await this.info(t.info, me, base);
         case 'guide':
@@ -270,6 +289,7 @@ export class DjBrainService {
     me: Member,
     actor: Actor,
     base: Base,
+    platform: Platform,
   ): Promise<DjReply> {
     switch (q.kind) {
       case 'hello':
@@ -279,7 +299,7 @@ export class DjBrainService {
       case 'guide':
         return this.guide(q.guide, me, base);
       case 'plan':
-        return this.combo(q.plan, me, actor, base);
+        return this.combo(q.plan, me, actor, base, platform);
     }
   }
 
@@ -293,6 +313,7 @@ export class DjBrainService {
     me: Member,
     actor: Actor,
     base: Base,
+    platform: Platform,
     retryAfterSec?: number,
   ): Promise<DjReply> {
     // A how-to question with no known topic: nothing to do without the AI either.
@@ -312,7 +333,7 @@ export class DjBrainService {
       (s) => s.do !== 'remove' && s.do !== 'replace',
     );
     if (plan && safe?.length && safe.length === plan.steps.length)
-      return this.combo({ ...plan, steps: safe }, me, actor, base);
+      return this.combo({ ...plan, steps: safe }, me, actor, base, platform);
     const rule = matchRules(request);
     if (rule?.kind === 'info') return this.info(rule.info, me, base);
     // "bài mới của Đen": a real YouTube lookup, no AI needed.
@@ -330,6 +351,7 @@ export class DjBrainService {
         me,
         actor,
         base,
+        platform,
       );
     if (rule?.kind === 'guide' && rule.guide !== 'add')
       return this.guide(rule.guide, me, base);
@@ -365,8 +387,10 @@ export class DjBrainService {
     me: Member,
     actor: Actor,
     base: Base,
+    platform: Platform = 'room',
   ): Promise<DjReply> {
-    const single = guideOfSingle(plan);
+    // Slack has no spotlight: the one-button task is done there.
+    const single = platform === 'room' ? guideOfSingle(plan) : null;
     if (single) return this.guide(single, me, base);
     // No second AI call: vague parts of the old rules ("2 bài chill") wait for the translator.
     const steps = await this.combos.run(plan, me, actor, () =>

@@ -316,6 +316,7 @@ Thêm bài, bỏ phiếu qua bài và thả reaction ngay trong Slack; bot tự 
 | `/music disconnect <PIN>` | Bỏ nối kênh |
 | `@Music Room <lệnh>` | Như `/music <lệnh>` nhưng gõ được cả **trong thread** (Slack không cho gõ `/music` trong thread); bot trả lời ngay trong thread đó |
 | `@Music Room here` trong một thread | Thẻ bỏ phiếu được đăng **vào thread đó** thay vì kênh chính (kênh phải đã nối). `/music here` ở kênh để đưa về kênh |
+| `@Music Room <câu nói>` hoặc `/music <câu nói>` | Hỏi **DJ** bằng câu tự nhiên, như `@DJ` trong phòng: "thêm 3 bài của Sơn Tùng", "skip giúp tôi", "xoá hết bài của tôi trừ bài của J97", "lưu bài này vào playlist Chill". Slack không có nút "Chỉ cho tôi" nên việc đơn (bỏ qua, tạm dừng, lưu…) được làm luôn; câu hỏi cách dùng thì DJ trả lời bằng chữ. Việc làm thay đổi phòng được đăng công khai, còn lại chỉ người hỏi thấy |
 | Tab **Home** của app Music Room | Trang riêng của mỗi người: bài đang phát (thanh tiến độ, ❤️ 🔥 👏, ⏭ Qua bài, 🎧 Nghe cùng), bỏ phiếu ✅ / ❌, 5 bài tiếp theo, ai đang trong phòng, nút **➕ Thêm bài** (dán link hoặc tìm theo tên). Workspace nối nhiều phòng thì chọn phòng ở đầu trang |
 
 Ghi chú:

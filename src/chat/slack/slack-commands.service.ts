@@ -121,6 +121,7 @@ export class SlackCommands {
             const reply = await this.brain.handle({
               actor,
               request: text.trim(),
+              platform: 'slack',
             });
             const view = await this.chat.now(roomId);
             return djSlackOut(reply, view?.roomUrl ?? null);
