@@ -32,8 +32,8 @@ Trả {"steps":[...]} theo thứ tự người nói. Mỗi bước là một tro
 {"do":"remove"|"heart"|"pin"|"skipTo","target":T}   pin = phát kế tiếp; skipTo = chuyển tới bài đó ngay
 {"do":"replace","target":T,"find":F}   đổi bài A trong hàng chờ thành bài B; A phải có TÊN bài hoặc SỐ thứ tự người dùng nêu ("bài này", "bài đó" → clarify "whichSong")
 {"do":"skip","count"?:n} {"do":"pause"} {"do":"resume"}
-{"do":"save"}   lưu bài đang phát (không nói playlist)
-{"do":"playlistSave","playlist":"tên"}   lưu bài đang phát vào playlist
+{"do":"save","target"?:T}   lưu vào "bài đã lưu": không có target = bài đang phát; "lưu (tất cả / các) bài trong hàng chờ / của Lan…" → target
+{"do":"playlistSave","playlist":"tên","target"?:T}   lưu vào playlist: bài đang phát, hoặc các bài trong hàng chờ (target)
 {"do":"playlistCreate","name":"tên","find"?:F,"count"?:n}   tạo playlist (có thể kèm bài)
 {"do":"playlistPlay","playlist":"tên"}   đưa cả playlist vào hàng chờ
 {"do":"info","about":"now"|"who_picked"|"when_mine"|"queue"|"mine"}   hỏi về phòng
@@ -269,10 +269,25 @@ export function parseTranslation(raw: unknown): Translation {
         break;
       case 'pause':
       case 'resume':
-      case 'save':
         out.push({ do: s.do });
         break;
-      case 'playlistSave':
+      case 'save': {
+        // Saving takes nothing away: a malformed target only falls back to the song on air.
+        const target = s.target === undefined ? null : targetOf(s.target);
+        out.push(target ? { do: 'save', target } : { do: 'save' });
+        break;
+      }
+      case 'playlistSave': {
+        const playlist = str(s.playlist, 100);
+        const target = s.target === undefined ? null : targetOf(s.target);
+        if (playlist)
+          out.push(
+            target
+              ? { do: 'playlistSave', playlist, target }
+              : { do: 'playlistSave', playlist },
+          );
+        break;
+      }
       case 'playlistPlay': {
         const playlist = str(s.playlist, 100);
         if (playlist) out.push({ do: s.do, playlist });

@@ -19,9 +19,11 @@ import { SnapshotService } from '../state/snapshot.service';
 import { DjComboService } from './dj-combo.service';
 import { etaSec } from './dj-eta';
 import { chatLine } from './dj-chat-lines';
-import { type Plan, planCombo } from './dj-plan';
+import { type Plan, planCombo, type Target } from './dj-plan';
 import {
   extractDjRequest,
+  howTopic,
+  isHowQuestion,
   matchQuick,
   matchRules,
   type QuickMatch,
@@ -39,6 +41,76 @@ const HOUR_MS = 3600_000;
 const MEMBERS_FOR_AI = 40;
 
 type Base = Pick<DjReply, 'forMemberId' | 'forName'>;
+
+/** One queue song named by title or place, nothing wider ("bài Lạc Trôi", "bài số 2"). */
+function oneSong(t: Target): boolean {
+  if (t.all || t.others || t.by || t.artist || t.keep || t.except?.length)
+    return false;
+  return (
+    t.titles?.length === 1 ||
+    t.positions?.length === 1 ||
+    t.first === 1 ||
+    t.last === 1
+  );
+}
+
+/**
+ * A single task that is one button of the "Hướng dẫn" sheet (skip one song, pause, save the song
+ * on air, heart / remove / pin one song): the DJ shows the button instead of pressing it (user's
+ * choice, 2026-10-18). Several tasks, songs to find, or many songs at once are still done.
+ */
+function guideOfSingle(plan: Plan): GuideTarget | null {
+  if (plan.wish || plan.steps.length !== 1) return null;
+  const s = plan.steps[0];
+  switch (s.do) {
+    case 'skip':
+      return (s.count ?? 1) === 1 ? 'skip' : null;
+    case 'pause':
+    case 'resume':
+      return 'pause';
+    case 'save':
+      return s.target ? null : 'save';
+    case 'heart':
+      return oneSong(s.target) ? 'heart' : null;
+    case 'remove':
+      return oneSong(s.target) ? 'itemMenu' : null;
+    case 'pin':
+      // "Phát ngay bài X" is two buttons (pin, then skip): the DJ does it.
+      return !s.now && oneSong(s.target) ? 'itemMenu' : null;
+    default:
+      return null;
+  }
+}
+
+/** The help topic a task belongs to, for "làm sao để <task>" read by the AI as the task. */
+function guideOfPlan(plan: Plan): GuideTarget | null {
+  const s = plan.steps[0];
+  if (!s) return null;
+  switch (s.do) {
+    case 'skip':
+      return 'skip';
+    case 'pause':
+    case 'resume':
+      return 'pause';
+    case 'heart':
+      return 'heart';
+    case 'remove':
+    case 'pin':
+    case 'replace':
+    case 'replaceWith':
+      return 'itemMenu';
+    case 'save':
+      return s.target ? 'playlist' : 'save';
+    case 'playlistSave':
+    case 'playlistCreate':
+    case 'playlistPlay':
+      return 'playlist';
+    case 'find':
+      return s.suggest ? 'suggestions' : 'add';
+    default:
+      return 'add';
+  }
+}
 
 /** Accents of Vietnamese: the asker wrote in Vietnamese (for the DJ's own lines). */
 const VIETNAMESE =
@@ -143,6 +215,18 @@ export class DjBrainService {
         return await this.withoutAi(request, me, actor, base, 0);
       }
       const t = parseTranslation(raw);
+      // "Làm sao để …": show where it is, never do it (the AI read it as a task).
+      if (isHowQuestion(request)) {
+        const guide =
+          t.kind === 'guide'
+            ? t.guide
+            : t.kind === 'plan'
+              ? guideOfPlan(t.plan)
+              : null;
+        if (guide) return await this.guide(guide, me, base);
+        if (t.kind === 'info') return await this.info(t.info, me, base);
+        return { ...base, kind: 'other' };
+      }
       switch (t.kind) {
         case 'plan':
           return await this.combo(t.plan, me, actor, base);
@@ -211,6 +295,18 @@ export class DjBrainService {
     base: Base,
     retryAfterSec?: number,
   ): Promise<DjReply> {
+    // A how-to question with no known topic: nothing to do without the AI either.
+    if (isHowQuestion(request)) {
+      const topic = howTopic(request);
+      if (topic) return this.guide(topic, me, base);
+      return retryAfterSec !== undefined
+        ? {
+            ...base,
+            kind: 'busy',
+            ...(retryAfterSec > 0 ? { retryAfterSec } : {}),
+          }
+        : { ...base, kind: 'other' };
+    }
     const plan = planCombo(request);
     const safe = plan?.steps.filter(
       (s) => s.do !== 'remove' && s.do !== 'replace',
@@ -270,6 +366,8 @@ export class DjBrainService {
     actor: Actor,
     base: Base,
   ): Promise<DjReply> {
+    const single = guideOfSingle(plan);
+    if (single) return this.guide(single, me, base);
     // No second AI call: vague parts of the old rules ("2 bài chill") wait for the translator.
     const steps = await this.combos.run(plan, me, actor, () =>
       Promise.resolve(null),

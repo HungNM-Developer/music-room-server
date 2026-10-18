@@ -91,8 +91,10 @@ export type PlanStep =
     }
   /** "Đổi bài A thành B": A from the queue, B found on YouTube. */
   | { do: 'replaceWith'; target: Target; find: Find }
-  | { do: 'save' }
-  | { do: 'playlistSave'; playlist: string }
+  /** The song on air, or (target) songs of the queue, into the asker's saved songs. */
+  | { do: 'save'; target?: Target }
+  /** The song on air, or (target) songs of the queue, into one of the asker's playlists. */
+  | { do: 'playlistSave'; playlist: string; target?: Target }
   | { do: 'playlistCreate'; name: string; find?: Find; count?: number }
   | { do: 'playlistPlay'; playlist: string };
 

@@ -49,14 +49,22 @@ function holds(text: string, alias: string): boolean {
   return Boolean(a) && t.includes(` ${a} `);
 }
 
-/** A credited artist line (YouTube Music's "Sơn Tùng M-TP, Snoop Dogg") names this artist. */
+/**
+ * A credited artist line (YouTube Music's "RHYDER, Coolkid, BAN") names this artist. `strict`:
+ * one credited artist IS them ("Wave Rhyder" is not RHYDER); loose: their name as words.
+ */
 export function creditsArtist(
   credits: string,
   a: Artist,
   strict = false,
 ): boolean {
   const c = normalizeQuery(credits);
-  return (strict ? a.strict : a.aliases).some((al) => holds(c, al));
+  if (!strict) return a.aliases.some((al) => holds(c, al));
+  const each = c
+    .split(/\s*,\s*|\s+&\s+|\s+x\s+|\s+(?:ft\.?|feat\.?)\s+/)
+    .map((x) => x.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
+  const names = a.strict.map((n) => n.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
+  return each.some((x) => names.includes(x));
 }
 
 /**
