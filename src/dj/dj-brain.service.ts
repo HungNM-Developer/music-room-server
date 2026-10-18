@@ -24,7 +24,7 @@ import { SnapshotService } from '../state/snapshot.service';
 import { DjComboService } from './dj-combo.service';
 import { etaSec } from './dj-eta';
 import { findFresh } from './dj-fresh';
-import { type Plan, planCombo } from './dj-plan';
+import { guideOfAiPlan, type Plan, planCombo, planFromAi } from './dj-plan';
 import { extractDjRequest, matchRules, type RuleMatch } from './dj-rules';
 
 const AI_TIMEOUT_MS = 12_000;
@@ -51,8 +51,18 @@ const SYSTEM = `Bạn là DJ của một phòng nghe nhạc chung ở văn phòn
   - Ngược lại đặt "items": tối đa 5 bài CÓ THẬT [{"artist","song"}], đúng nghệ sĩ gốc, ưu tiên bài trong "known" (ghi đúng như danh sách), không bịa, hợp nghe chung ở văn phòng. Yêu cầu không nói rõ thì ưu tiên nhạc Việt và nhạc quốc tế phổ biến.
 - "guide": họ hỏi cách làm một việc trên trang. "guide" là một trong: ${GUIDE_TARGETS.join(', ')}.
 - "info": họ hỏi về tình trạng phòng. "info" là một trong: ${INFO_KINDS.join(', ')}.
+- "do": họ nhờ DJ làm việc với hàng chờ / máy phát: nhiều việc một lúc, thả tim, xoá, ghim, chuyển tới một bài, bỏ qua, tạm dừng, phát tiếp, thêm nhiều bài... Đặt "steps" theo đúng thứ tự họ nói, mỗi bước là một trong:
+  {"do":"add","titles":["<tên bài họ nêu>"],"pin"?:"next"|"now"}
+  {"do":"addArtist","artist":"<nghệ sĩ>","count":1-5,"mode":"top"|"latest"|"popular"}
+  {"do":"addPicks","items":[{"artist","song"}],"pin"?:"next"|"now"}  (họ chỉ nói chung chung: bạn chọn bài CÓ THẬT, như "items" ở trên)
+  {"do":"addFrom","source":"played"|"saved","count":1-5}  (bài vừa phát / bài họ đã lưu)
+  {"do":"heart"|"remove"|"pin"|"skipTo","target":{...}}  (pin = phát tiếp theo; skipTo = chuyển tới bài đó ngay)
+  {"do":"skip","count"?:n}, {"do":"pause"}, {"do":"resume"}
+  "target" chọn bài trong "queue": {"all"?:true,"mine"?:true (bài của người hỏi),"others"?:true (bài của người khác),"by"?:"<tên người chọn>","titles"?:[...],"except"?:[tên bài giữ lại],"positions"?:[số thứ tự trong "queue", 1 = bài kế tiếp, -1 = bài cuối],"first"?:n,"last"?:n}
+  Muốn nghe một bài trong hàng chờ NGAY / liền / luôn / bây giờ: "skipTo"; chỉ muốn nó phát tiếp theo (ghim, ưu tiên): "pin".
+  Họ xin hơn 5 bài: vẫn ghi đúng số họ xin trong "count". Có lời chúc / tặng ai: đặt "wish" (chuỗi ngắn).
 - "other": việc khác.
-Trả lời đúng JSON: {"intent": ..., "guide"?: ..., "info"?: ..., "fresh"?: {...}, "items"?: [...]}.`;
+Trả lời đúng JSON: {"intent": ..., "guide"?: ..., "info"?: ..., "fresh"?: {...}, "items"?: [...], "steps"?: [...], "wish"?: ...}.`;
 
 interface AiAnswer {
   intent?: string;
@@ -60,7 +70,13 @@ interface AiAnswer {
   info?: string;
   fresh?: { artist?: string; mode?: string };
   items?: { artist?: string; song?: string }[];
+  /** intent "do": the AI planner's steps (checked by planFromAi). */
+  steps?: unknown;
+  wish?: unknown;
 }
+
+/** Queue songs the AI may point at ("bài số 2", "bài của Lan"). */
+const QUEUE_FOR_AI = 30;
 
 /**
  * The "@DJ" assistant (spec 2026-10-18-dj-chat), shared by the room chat and Slack: the rules
@@ -188,6 +204,11 @@ export class DjBrainService {
             : np.title
           : null,
         known: await this.dj.knownTitles(roomId),
+        queue: (snap?.queue ?? []).slice(0, QUEUE_FOR_AI).map((q, i) => ({
+          position: i + 1,
+          title: q.track.title,
+          addedBy: q.addedBy?.displayName ?? null,
+        })),
       }),
       { temperature: 0.2, timeoutMs: AI_TIMEOUT_MS },
     );
@@ -284,7 +305,16 @@ export class DjBrainService {
       (INFO_KINDS as readonly string[]).includes(a.info ?? '')
     )
       return this.info(a.info as InfoKind, me, base);
-    if (a.intent === 'add') {
+    if (a.intent === 'do') {
+      const plan = planFromAi(a.steps, a.wish);
+      if (plan) {
+        // One simple task stays a guide (the asker can do it with one button), like the rules.
+        const guide = guideOfAiPlan(plan);
+        if (guide) return this.guide(guide, me, base);
+        return this.combo(plan, me, actor, base);
+      }
+    }
+    if (a.intent === 'add' || a.intent === 'do') {
       const artist = a.fresh?.artist?.trim();
       if (artist)
         return this.addFresh(
@@ -476,7 +506,13 @@ export class DjBrainService {
 
 /** The AI's song picks, checked and kept short (names go into a search). */
 function picksOf(a: AiAnswer): { artist: string; song: string }[] {
-  return (a.items ?? [])
+  // Asked for songs, the AI may still answer with a plan: its chosen songs are in "addPicks".
+  const fromSteps = Array.isArray(a.steps)
+    ? (a.steps as { do?: unknown; items?: AiAnswer['items'] }[])
+        .filter((s) => s?.do === 'addPicks' && Array.isArray(s.items))
+        .flatMap((s) => s.items ?? [])
+    : [];
+  return (a.items?.length ? a.items : fromSteps)
     .filter(
       (p): p is { artist: string; song: string } =>
         typeof p.artist === 'string' &&

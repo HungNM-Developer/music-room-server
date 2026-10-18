@@ -74,7 +74,9 @@ export type DjStepReason =
   | 'oneHeart'
   | 'alreadyHearted'
   /** heart: the only matches were the asker's own songs. */
-  | 'ownSong';
+  | 'ownSong'
+  /** add: more songs asked for than one request brings (`wanted`); `got` = that limit. */
+  | 'tooMany';
 
 export interface DjStep {
   action: DjAction;
@@ -88,7 +90,7 @@ export interface DjStep {
   wish?: string;
   /** add: a real "newest / trending" lookup. */
   fresh?: 'latest' | 'popular' | null;
-  /** pin: also skipped to it ("phát ngay"). */
+  /** pin: to play it now ("phát ngay", "skip đến …"), not only next; also on a failed pin. */
   now?: boolean;
   /** Not done (or done differently): why. */
   reason?: DjStepReason;

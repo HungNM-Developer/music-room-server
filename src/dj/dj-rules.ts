@@ -131,14 +131,15 @@ export function vague(text: string): boolean {
 /** Polite words around a request ("giúp tôi", "dùm", "nhé"…), in plain form. */
 // Not "cho anh / cho em": they are common in song names ("Hãy Trao Cho Anh").
 export const FILLER_END =
-  /( (giup|dum) (toi|minh|em|tui)| giup| dum| di| nhe| nha| nhen| please| pls| di nao)+$/;
+  /( (giup|dum|gium) (toi|minh|em|tui)| giup| dum| gium| di| nhe| nha| nhen| please| pls| di nao)+$/;
 export const FILLER_START =
-  /^((hay|giup|dum|cho) (toi|minh|em|tui) (hoi )?|giup |dum |hay |hoi |please |pls |ban oi |dj oi )+/;
+  /^((hay|giup|dum|gium|cho) (toi|minh|em|tui) (hoi )?|giup |dum |gium |hay |hoi |lam on |please |pls |ban oi |dj oi )+/;
 
 /** Trailing filler words as written (FILLER_END matches them without accents). */
 const FILLER_WORDS = new Set([
   'giúp',
   'dùm',
+  'giùm',
   'tôi',
   'mình',
   'em',
@@ -180,7 +181,9 @@ export function tail(original: string, from: number): string {
 }
 
 const ADD_VERB =
-  /^(bat|them|mo|play|add|phat|cho nghe|nghe|queue)( (giup|dum|cho) (toi|minh|em|tui)| giup| dum)?( (bai hat|bai|nhac|song))? /;
+  /^(bat|them|mo|play|add|phat|cho nghe|nghe|queue|chon|lay|kiem|nhet|dua|xep|order)( (giup|dum|cho) (toi|minh|em|tui)| giup| dum)?( (bai hat|bai|nhac|song))? /;
+/** "đưa Lạc Trôi vào hàng chờ": where it goes, not part of the name. */
+const INTO_QUEUE = / vao (hang cho|danh sach( phat)?|list|queue|playlist)$/;
 
 /** How-to phrases (the DJ shows the button) in plain form, most specific first. */
 const GUIDES: [GuideTarget, RegExp][] = [
@@ -221,6 +224,10 @@ const INFOS: [InfoKind, RegExp][] = [
     /(^| )(hang cho|con (bao nhieu|may) bai|queue|bao nhieu bai (dang )?cho)( |$)/,
   ],
 ];
+
+/** A task word anywhere in the request. */
+const ACTION_INSIDE =
+  /(^| )(go|go bo|xoa|tha tim|ghim|skip|bo qua|chuyen|uu tien|tam dung|them|bat|xep|don)( |$)/;
 
 const SIMILAR = /(^| )(giong|tuong tu|na na|nhu bai|similar|like this)( |$)/;
 const SIMILAR_ACCENTED =
@@ -285,7 +292,14 @@ export function freshMatch(
 
 /** null = the request is vague: the AI decides. */
 export function matchRules(request: string): RuleMatch | null {
-  const original = request.trim();
+  let original = request.trim();
+  const into = INTO_QUEUE.exec(' ' + plain(original));
+  if (into) {
+    const ws = words(original);
+    original = ws
+      .slice(0, ws.length - into[0].trim().split(' ').length)
+      .join(' ');
+  }
   const p0 = plain(original);
   if (!p0) return { kind: 'hello' };
   const p = p0.replace(FILLER_START, '');
@@ -299,7 +313,12 @@ export function matchRules(request: string): RuleMatch | null {
   // "bài gì giống bài đang phát": a song request, not a question about the song on air.
   if (similarIn(original, p)) return null;
 
-  for (const [info, re] of INFOS) if (re.test(p)) return { kind: 'info', info };
+  for (const [info, re] of INFOS)
+    if (re.test(p)) {
+      // "hàng chờ có bài nào của Lan thì gỡ hết": a task about the queue, not a question.
+      if (info === 'queueLength' && ACTION_INSIDE.test(p)) return null;
+      return { kind: 'info', info };
+    }
 
   // "mời mọi người": only with the accent ("mọi người" = everyone).
   if (/(^|\s)mời\s+(bạn|mọi người|người|ai|thêm|đồng nghiệp)/i.test(original))

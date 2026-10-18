@@ -118,6 +118,8 @@ export function stepText(s: DjStep): string {
       return 'Chỉ gỡ được bài của chính mình';
     case 'ownSong':
       return `Không thả tim được ${song}: đó là bài của chính bạn`;
+    case 'tooMany':
+      return `Mỗi lần DJ thêm tối đa ${s.got} bài (bạn xin ${s.wanted} bài)`;
   }
   const why =
     s.errorCode === 'FORBIDDEN'
@@ -136,7 +138,8 @@ export function stepText(s: DjStep): string {
         : s.query
           ? ` "${s.query}"`
           : '';
-  return `Không ${VERB[s.action]} được${what}: ${why}`;
+  const verb = s.action === 'pin' && s.now ? 'chuyển tới bài' : VERB[s.action];
+  return `Không ${verb} được${what}: ${why}`;
 }
 
 export function djText(r: DjReply): string {
