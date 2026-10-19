@@ -138,7 +138,11 @@ export class SnapshotService {
           ...yes,
           against: no.votes,
           againstVoters: no.voters,
-          required: requiredVotes(voters.size, settings.skipThreshold),
+          required: requiredVotes(
+            voters.size,
+            settings.skipThreshold,
+            settings.skipMinVotes,
+          ),
           openedBy: opener
             ? { id: opener.id, displayName: opener.displayName }
             : null,

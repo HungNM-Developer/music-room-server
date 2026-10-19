@@ -60,6 +60,11 @@ export const ThemeIdSchema = z.enum(THEME_IDS);
 
 export const RoomSettingsSchema = z.strictObject({
   skipThreshold: z.number().min(0.1).max(1),
+  /**
+   * Fewest ✅ a skip ever needs, whatever the share says: people listening from a linked
+   * Slack channel are not online, so the share alone can let one vote decide (1 = off).
+   */
+  skipMinVotes: z.number().int().min(1).max(50),
   /** V1: seconds a skip vote stays open. */
   skipVoteWindowSec: z.number().int().min(10).max(60),
   maxQueuedPerMember: z.number().int().min(1).max(20),
@@ -86,6 +91,7 @@ export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 
 export const DEFAULT_SETTINGS: RoomSettings = {
   skipThreshold: 0.5,
+  skipMinVotes: 1,
   skipVoteWindowSec: 20,
   maxQueuedPerMember: 4,
   maxTrackDurationSec: 600,
