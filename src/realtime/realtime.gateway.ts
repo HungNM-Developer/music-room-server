@@ -830,7 +830,7 @@ export class RealtimeGateway
   @SubscribeMessage('queue:add')
   add(@ConnectedSocket() s: AppSocket, @MessageBody() body: unknown) {
     return this.run('queue:add', s, body, (input, actor) =>
-      this.queue.add(actor, input),
+      this.queue.add(actor, input, { upvote: true }),
     );
   }
 

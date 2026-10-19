@@ -46,7 +46,12 @@ export interface CommandResults {
     theme: ThemeId;
   };
   'host:register': { token: string; code: string; memberId: string };
-  'queue:add': { queueItemId: string; title: string };
+  'queue:add': {
+    queueItemId: string;
+    title: string;
+    /** Someone else had queued it: the member's heart went to that copy instead. */
+    upvoted?: boolean;
+  };
   /**
    * `library`: songs this server already knows (no quota); `cache`: an earlier YouTube
    * search for the same words; `youtube`: a fresh YouTube search.

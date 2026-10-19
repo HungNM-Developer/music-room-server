@@ -16,7 +16,11 @@ import { PlaybackService } from '../playback/playback.service';
 import { isBlocked } from './block.service';
 import type { Tx } from '../prisma/prisma.service';
 import { ActivityService } from '../social/activity.service';
-import { type Actor, RoomStateService } from '../state/room-state.service';
+import {
+  type Actor,
+  type MutateCtx,
+  RoomStateService,
+} from '../state/room-state.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { readSettings } from '../state/settings';
 
@@ -123,10 +127,15 @@ export class QueueService {
     }
   }
 
+  /**
+   * `upvote`: a song another member already queued gets this member's heart instead
+   * (the web's add). The DJ leaves it off: it needs ALREADY_QUEUED to try the next upload.
+   */
   async add(
     actor: Actor,
     input: CommandInput<'queue:add'>,
-  ): Promise<{ queueItemId: string; title: string }> {
+    opts: { upvote?: boolean } = {},
+  ): Promise<CommandResults['queue:add']> {
     const videoId = resolveVideoId(input.input);
     const rl = this.limiter.hit(
       `add:${actor.memberId}`,
@@ -136,6 +145,11 @@ export class QueueService {
     );
     if (!rl.ok)
       throw new AppError('RATE_LIMITED', { seconds: rl.retryAfterSec });
+    // Before the queue limit: an upvote adds nothing of the member's own.
+    if (opts.upvote) {
+      const upvoted = await this.upvote(actor, `youtube:${videoId}`);
+      if (upvoted) return upvoted;
+    }
     // Cheap pre-check so a member at the limit cannot burn YouTube quota (re-checked in the tx).
     const room = await this.prisma.room.findUniqueOrThrow({
       where: { id: actor.roomId },
@@ -358,25 +372,65 @@ export class QueueService {
       const existing = await tx.heart.findUnique({
         where: { queueItemId_memberId: { queueItemId, memberId: me.id } },
       });
-      await tx.heart.deleteMany({
+      if (existing) await this.dropHeart(tx, actor.roomId, me);
+      else await this.giveHeart(tx, ctx, actor.roomId, me, item);
+    });
+  }
+
+  /**
+   * Adding a song someone else already queued hearts it instead: the request becomes an
+   * upvote, never a refusal. Null when no other member's copy is waiting (add as usual);
+   * the member's own copy, or one on air, still gives ALREADY_QUEUED.
+   */
+  private async upvote(
+    actor: Actor,
+    trackId: string,
+  ): Promise<CommandResults['queue:add'] | null> {
+    return this.state.mutate(actor.roomId, async (tx, ctx) => {
+      const item = await tx.queueItem.findFirst({
+        where: { roomId: actor.roomId, trackId, status: 'QUEUED' },
+        include: { track: true },
+      });
+      if (!item) return null;
+      const me = await this.state.activeMember(tx, actor);
+      if (me.isDevice) throw new AppError('FORBIDDEN');
+      if (item.addedById === me.id) throw new AppError('ALREADY_QUEUED');
+      const existing = await tx.heart.findUnique({
         where: {
-          memberId: me.id,
-          queueItem: { roomId: actor.roomId, status: 'QUEUED' },
+          queueItemId_memberId: { queueItemId: item.id, memberId: me.id },
         },
       });
-      if (!existing) {
-        await tx.heart.create({ data: { queueItemId, memberId: me.id } });
-        await this.activity.log(
-          tx,
-          ctx,
-          actor.roomId,
-          me,
-          'track_heart',
-          `đã thả tim "${item.track.title}"`,
-          { title: item.track.title },
-        );
-      }
+      // Already hearted: asking again keeps it (unlike the heart button, which toggles).
+      if (!existing) await this.giveHeart(tx, ctx, actor.roomId, me, item);
+      return { queueItemId: item.id, title: item.track.title, upvoted: true };
     });
+  }
+
+  private async dropHeart(tx: Tx, roomId: string, me: Member): Promise<void> {
+    await tx.heart.deleteMany({
+      where: { memberId: me.id, queueItem: { roomId, status: 'QUEUED' } },
+    });
+  }
+
+  /** Moves the member's one heart onto `item`. */
+  private async giveHeart(
+    tx: Tx,
+    ctx: MutateCtx,
+    roomId: string,
+    me: Member,
+    item: ItemWithTrack,
+  ): Promise<void> {
+    await this.dropHeart(tx, roomId, me);
+    await tx.heart.create({ data: { queueItemId: item.id, memberId: me.id } });
+    await this.activity.log(
+      tx,
+      ctx,
+      roomId,
+      me,
+      'track_heart',
+      `đã thả tim "${item.track.title}"`,
+      { title: item.track.title },
+    );
   }
 
   async setMessage(
