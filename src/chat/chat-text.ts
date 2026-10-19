@@ -77,6 +77,7 @@ export const CHAT = {
     '• `/music queue` — 5 bài tiếp theo',
     '• `@Music Room <câu bất kỳ>` hoặc `/music <câu bất kỳ>` — hỏi DJ: "bài mới của Đen Vâu", "vài bài chill", "còn bao lâu tới bài của tôi". Câu bạn gửi DJ được chuyển cho AI miễn phí.',
     '• Lệnh chỉ chạy khi gõ ngắn đúng dạng: `skip`, `now`, `queue`, `help`, `here`, `add <tên bài ngắn | link>`; câu dài hơn sẽ do DJ hiểu.',
+    '• Trang *Home* của bot (mục Apps → Music Room): xem bài đang phát, ➕ Thêm bài, 🎧 Hỏi DJ, bỏ phiếu ngay tại đó',
     '• `@Music Room here` trong một thread — thẻ bỏ phiếu đăng vào thread đó; `/music here` ở kênh — đưa về kênh',
     '• `/music connect <MÃ PHÒNG> <PIN>` / `/music disconnect <PIN>` — quản trị viên nối / bỏ nối kênh (chỉ dùng `/music`, không tag bot kèm PIN)',
   ].join('\n'),
