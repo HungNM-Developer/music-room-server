@@ -101,6 +101,7 @@ export function homeView(
     elements: [
       button('🔄 Làm mới', 'home_refresh', v.roomId),
       button('➕ Thêm bài', 'home_add', v.roomId, 'primary'),
+      button('🎧 Hỏi DJ', 'home_dj', v.roomId),
       {
         type: 'button',
         text: plain('🌐 Mở phòng trên web'),
@@ -235,14 +236,39 @@ export function homeView(
 
   blocks.push(
     divider,
+    section(
+      '*🎧 DJ của phòng*\nBấm *🎧 Hỏi DJ* ở trên, hoặc tag *@Music Room* trong kênh, rồi nói như với người:',
+    ),
+    context(text(DJ_EXAMPLES.map((e) => `• ${e}`).join('\n'))),
+    divider,
+    section(`*✨ Mới cập nhật*\n${WHATS_NEW.map((e) => `• ${e}`).join('\n')}`),
     context(
       text(
-        '💡 Trang này tự cập nhật khi đổi bài hoặc có bỏ phiếu. Ở kênh, gõ */music* hoặc tag *@Music Room* để dùng nhanh.',
+        '💡 Trang này tự cập nhật khi đổi bài hoặc có bỏ phiếu. Ở kênh, gõ */music help* để xem các lệnh.',
       ),
     ),
   );
   return { type: 'home', private_metadata: v.roomId, blocks };
 }
+
+/** What people can ask the DJ (Home and the "Hỏi DJ" modal). */
+const DJ_EXAMPLES = [
+  '"thêm tôi 3 bài" — thêm bài giống bài đang phát',
+  '"thêm bài Lạc Trôi", hoặc dán link YouTube',
+  '"vài bài chill", "bài mới của Đen", "3 bài của Sơn Tùng"',
+  '"phát ngay bài Nàng Thơ", "đổi bài này thành Mười Năm"',
+  '"bỏ qua bài này", "lưu bài này", "xoá bài của tôi"',
+  '"bài tiếp theo là gì", "còn bao lâu tới bài của tôi"',
+];
+
+/** Recent changes worth telling Slack users about (newest first). */
+const WHATS_NEW = [
+  '*Hỏi DJ ngay trên trang này*: bấm *🎧 Hỏi DJ*, không cần vào kênh.',
+  'DJ hiểu nhanh *"thêm tôi 4 bài"* (bài giống bài đang phát) và *link YouTube* dán vào.',
+  '*Số phiếu tối thiểu để qua bài*: người nghe qua Slack được tính công bằng hơn (quản trị viên đặt trong tab *Cài đặt* trên web).',
+  'Trên web: ảnh đại diện và *logo Slack* hiện cạnh tên bạn trong *Mọi người*; chủ phòng có 👑.',
+  'Video không còn tự bật phụ đề; *Yêu thích* và *playlist* tự cập nhật, không cần tải lại.',
+];
 
 /** No channel of this workspace is linked to a room yet. */
 export function setupView(): View {
@@ -285,6 +311,66 @@ export function errorView(message: string): View {
         elements: [button('🔄 Làm mới', 'home_refresh', '')],
       },
     ],
+  };
+}
+
+// ------------------------------------------------------------ "Hỏi DJ" modal
+
+export const DJ_CALLBACK = 'ask_dj';
+
+/** The "Hỏi DJ" modal; kept whole in private_metadata like the "Thêm bài" one. */
+export interface DjState {
+  roomId: string;
+  roomName: string;
+  /** The last request and the DJ's answer (null while the DJ is still working). */
+  asked: string | null;
+  answer: string | null;
+  /** Bumped to empty the input after each request. */
+  round: number;
+}
+
+/** The answer kept in private_metadata (Slack allows 3000 characters there). */
+const DJ_ANSWER_MAX = 1800;
+
+export function djModal(s: DjState): View {
+  s = { ...s, answer: s.answer === null ? null : cut(s.answer, DJ_ANSWER_MAX) };
+  const blocks: unknown[] = [
+    context(
+      text(
+        `Phòng *${esc(s.roomName)}*   ·   Nói với DJ như với người. Bài DJ thêm được ghi là của bạn.`,
+      ),
+    ),
+  ];
+  if (s.asked)
+    blocks.push(
+      section(`*Bạn:* ${esc(s.asked)}`),
+      section(
+        `🎧 *DJ:* ${s.answer === null ? '⏳ Đang nghĩ…' : esc(s.answer)}`,
+      ),
+      divider,
+    );
+  blocks.push(
+    {
+      type: 'input',
+      block_id: `dj${s.round}`,
+      label: plain(s.asked ? 'Hỏi tiếp' : 'Bạn muốn DJ làm gì?'),
+      element: {
+        type: 'plain_text_input',
+        action_id: 'q',
+        placeholder: plain('Ví dụ: thêm tôi 3 bài giống bài này'),
+        max_length: 300,
+      },
+    },
+    context(text(DJ_EXAMPLES.map((e) => `• ${e}`).join('\n'))),
+  );
+  return {
+    type: 'modal',
+    callback_id: DJ_CALLBACK,
+    title: plain('Hỏi DJ'),
+    submit: plain('Gửi'),
+    close: plain('Xong'),
+    private_metadata: JSON.stringify(s),
+    blocks,
   };
 }
 

@@ -5,6 +5,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { parseYouTubeVideo, type Reaction, REACTIONS } from '../../contracts';
+import { DjBrainService } from '../../dj/dj-brain.service';
 import { RoomActivityService } from '../../rooms/room-activity.service';
 import { RoomStateService } from '../../state/room-state.service';
 import {
@@ -14,11 +15,15 @@ import {
 } from '../chat-room.service';
 import { CHAT, chatError } from '../chat-text';
 import { SlackApi } from './slack-api.service';
+import { djSlackOut } from './slack-blocks';
 import {
   ADD_CALLBACK,
   addModal,
   addNotice,
   type AddState,
+  DJ_CALLBACK,
+  djModal,
+  type DjState,
   errorView,
   homeView,
   setupView,
@@ -89,6 +94,7 @@ export class SlackHomeService implements OnModuleInit, OnModuleDestroy {
     private readonly chat: ChatRoomService,
     private readonly state: RoomStateService,
     private readonly roomActivity: RoomActivityService,
+    private readonly brain: DjBrainService,
   ) {}
 
   onModuleInit(): void {
@@ -242,6 +248,8 @@ export class SlackHomeService implements OnModuleInit, OnModuleDestroy {
         return this.publish(teamId, userId, a.selected_option?.value);
       case 'home_add':
         return this.openAdd(p, teamId, roomId);
+      case 'home_dj':
+        return this.openDj(p, teamId, roomId);
     }
     if (!(await this.allowed(teamId, roomId)))
       return this.publish(teamId, userId);
@@ -311,6 +319,99 @@ export class SlackHomeService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  // ------------------------------------------------------------ "Hỏi DJ" modal
+
+  private async openDj(
+    p: SlackViewPayload,
+    teamId: string,
+    roomId: string | null,
+  ) {
+    if (!p.trigger_id || !(await this.allowed(teamId, roomId))) {
+      return this.publish(teamId, p.user?.id ?? '');
+    }
+    const rooms = await this.chat.roomsOfTeam('slack', teamId);
+    const room = rooms.find((r) => r.id === roomId)!;
+    await this.slack.openView(
+      p.trigger_id,
+      djModal({
+        roomId: room.id,
+        roomName: room.name,
+        asked: null,
+        answer: null,
+        round: 0,
+      }),
+    );
+  }
+
+  /**
+   * "Gửi" in the "Hỏi DJ" modal: the DJ answers as it does to "@Music Room …" in a channel.
+   * The AI can take longer than Slack waits: "Đang nghĩ…" first, the answer when it comes.
+   * Songs added or the room changed: Home says so too.
+   */
+  private async submitDj(
+    p: SlackViewPayload,
+    s: DjState,
+  ): Promise<Record<string, unknown>> {
+    const teamId = p.team?.id ?? p.user?.team_id ?? '';
+    const userId = p.user?.id ?? '';
+    const blockId = `dj${s.round}`;
+    const q = (p.view?.state?.values?.[blockId]?.q?.value ?? '').trim();
+    if (!q)
+      return {
+        response_action: 'errors',
+        errors: { [blockId]: 'Hãy gõ điều bạn muốn DJ làm.' },
+      };
+    if (!(await this.allowed(teamId, s.roomId)))
+      return {
+        response_action: 'errors',
+        errors: { [blockId]: 'Phòng này không còn nối với Slack.' },
+      };
+    const next = { ...s, asked: q, round: s.round + 1 };
+    const work: Promise<string> = (async () => {
+      const user = await this.user(p, teamId);
+      const { actor } = await this.chat.asMember(s.roomId, user);
+      const reply = await this.brain.handle({
+        actor,
+        request: q,
+        platform: 'slack',
+      });
+      const view = await this.chat.now(s.roomId);
+      const out = djSlackOut(reply, view?.roomUrl ?? null);
+      if (reply.kind === 'added' || reply.kind === 'done')
+        void this.notify(teamId, userId, `🎧 ${out.text}`, s.roomId);
+      return out.text;
+    })().catch((e: unknown) => `⚠️ ${chatError(e)}`);
+
+    const quick = await Promise.race([
+      work,
+      new Promise<null>((r) => setTimeout(() => r(null), SUBMIT_WAIT_MS)),
+    ]);
+    if (quick !== null)
+      return {
+        response_action: 'update',
+        view: djModal({ ...next, answer: quick }),
+      };
+    const viewId = p.view?.id;
+    void work.then((answer) =>
+      viewId
+        ? this.slack.updateView(viewId, djModal({ ...next, answer }))
+        : undefined,
+    );
+    return {
+      response_action: 'update',
+      view: djModal({ ...next, answer: null }),
+    };
+  }
+
+  private static djStateOf(p: SlackViewPayload): DjState | null {
+    try {
+      const s = JSON.parse(p.view?.private_metadata ?? '') as DjState;
+      return s && typeof s.roomId === 'string' ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
   private static stateOf(p: SlackViewPayload): AddState | null {
     try {
       const s = JSON.parse(p.view?.private_metadata ?? '') as AddState;
@@ -328,6 +429,10 @@ export class SlackHomeService implements OnModuleInit, OnModuleDestroy {
     const s = SlackHomeService.stateOf(p);
     const teamId = p.team?.id ?? p.user?.team_id ?? '';
     const userId = p.user?.id ?? '';
+    if (p.view?.callback_id === DJ_CALLBACK) {
+      const d = SlackHomeService.djStateOf(p);
+      return d ? this.submitDj(p, d) : {};
+    }
     if (p.view?.callback_id !== ADD_CALLBACK || !s) return {};
     const blockId = `q${s.round}`;
     const q = (p.view.state?.values?.[blockId]?.q?.value ?? '').trim();

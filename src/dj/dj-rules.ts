@@ -418,8 +418,14 @@ const HOW =
  * shows where the button is (spotlight).
  */
 export function isHowQuestion(request: string): boolean {
-  return HOW.test(plain(request));
+  const p = plain(request);
+  // "bài tiếp theo là gì", "bài này là bài gì": asks which song (the room's info), not how
+  // a feature works ("nghe cùng là gì"). Without its "là gì", is it still a how-to question?
+  if (SONG_WHAT.test(p)) return HOW.test(p.replace(/ la (bai |ca khuc )?gi( |$)/g, ' '));
+  return HOW.test(p);
 }
+/** "bài … là (bài) gì": a question about a song. */
+const SONG_WHAT = /(^| )(bai|ca khuc|song)( \S+){0,3} la (bai |ca khuc )?gi( |$)/;
 
 /** The help topic of a how-to question, from its words (null: the AI decides). */
 export function howTopic(request: string): GuideTarget | null {
