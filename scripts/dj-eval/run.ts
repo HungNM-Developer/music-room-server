@@ -7,9 +7,12 @@
  *   npm run dj:eval -- --fresh       ignore the AI answer cache
  *   npm run dj:eval -- --cached      only cases whose AI answer is cached (no AI call at all)
  *
- * Uses the free AI keys of .env (Gemini, then Groq). AI answers are cached per prompt and
- * sentence in node_modules/.cache, so a re-run only asks for what changed. Nothing is done in
- * any room: no songs are looked up, added or removed.
+ * Uses the free AI keys of .env (Gemini, then Groq, every model of GEMINI_MODEL / GROQ_MODEL).
+ * Those must be dev keys of their own (another Google AI Studio project, another Groq
+ * organization), never production's: free quotas are per project / organization, and a full
+ * run spends a few hundred requests that the live "@DJ" then lacks. AI answers are cached per
+ * prompt and sentence in node_modules/.cache, so a re-run only asks for what changed. Nothing
+ * is done in any room: no songs are looked up, added or removed.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
