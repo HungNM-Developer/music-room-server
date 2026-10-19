@@ -43,7 +43,7 @@ Trả {"steps":[...]} theo thứ tự người nói. Mỗi bước là một tro
 {"do":"clarify","about":"removeScope"|"whichSong"|"whichPlaylist"}   câu mơ hồ (xoá mà không rõ bài nào…)
 {"do":"chat","reply":"..."}   chào hỏi / không liên quan tới nhạc
 F = {"titles"?:["tên bài họ nêu"],"artist"?:"ca sĩ","mode"?:"top"|"latest"|"popular"|"similar_now"|"mood","mood"?:"tâm trạng/thể loại","picks"?:[{"artist","song"}],"exclude"?:{"titles"?:[...],"artist"?:"..."},"source"?:"saved"|"played"}
-  "source": "saved" = bài người hỏi đã lưu, "played" = bài phòng vừa phát ("bật lại", "thêm lại").
+  "source": "saved" = bài người hỏi đã lưu, CHỈ khi câu nói rõ "bài (tôi) đã lưu", "bài yêu thích", "bài của tôi"; "played" = bài phòng vừa phát ("bật lại", "thêm lại").
   "latest" = mới nhất / vừa ra; "popular" = hot / trending; "similar_now" = giống bài đang phát; "mood" = theo tâm trạng / thể loại ("chill", "buồn", "lofi", "nhạc Hàn"…): LUÔN đặt "mode":"mood" và "picks" 5 bài CÓ THẬT, nổi tiếng, đúng ca sĩ gốc (câu tiếng Việt thì ưu tiên nhạc Việt). "đừng thêm X" → "exclude".
 T = {"scope":"all"|"mine"|"others"|"member","member"?:"tên","artist"?:"...","titles"?:[...],"positions"?:[1 = bài kế, -1 = bài cuối],"first"?:n,"last"?:n,"keep"?:{"artist"?:"...","titles"?:[...],"member"?:"..."}}
   "chừa", "giữ lại", "trừ", "ngoại trừ", "để lại" → "keep". "N bài cuối" → "last":N; "bài cuối" → "positions":[-1].

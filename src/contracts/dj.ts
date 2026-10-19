@@ -147,6 +147,8 @@ export interface DjStep {
   /** add, fewer than asked: how many went in of how many. */
   got?: number;
   wanted?: number;
+  /** add from the asker's library: the saved songs, or the room's recently played ones. */
+  from?: 'saved' | 'played';
   /** suggest: the songs offered; remove `kept`: the songs kept. */
   tracks?: TrackSummary[];
   /** remove `kept`: how many of `tracks` were kept only because their artist is not certain. */

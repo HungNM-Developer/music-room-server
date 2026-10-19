@@ -734,6 +734,50 @@
    }
   },
   {
+   "text": "thêm tôi 4 bài đi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "similar_now"
+      },
+      "count": 4
+     }
+    ]
+   }
+  },
+  {
+   "text": "thêm đại cho tôi 4 bài đi",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "similar_now"
+      },
+      "count": 4
+     }
+    ]
+   }
+  },
+  {
+   "text": "cho mình vài bài nữa",
+   "expect": {
+    "kind": "plan",
+    "steps": [
+     {
+      "do": "find",
+      "find": {
+       "mode": "similar_now"
+      }
+     }
+    ]
+   }
+  },
+  {
    "text": "bật lại 3 bài vừa phát",
    "expect": {
     "kind": "plan",

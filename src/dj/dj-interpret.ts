@@ -212,7 +212,13 @@ export async function interpret({
   ai,
 }: InterpretInput): Promise<Decision> {
   const quick = matchQuick(request, room.members);
-  if (quick)
+  // "thêm tôi 4 bài" means more like the song on air: with nothing on air, the AI picks.
+  const needsNow =
+    quick?.kind === 'plan' &&
+    quick.plan.steps.some(
+      (s) => s.do === 'find' && s.find.mode === 'similar_now',
+    );
+  if (quick && !(needsNow && !room.nowPlaying))
     return quick.kind === 'plan' ? planFor(quick.plan, platform) : quick;
   if (!ai) return withoutAi(request, platform);
   const r = await ai(TRANSLATE_SYSTEM, translateInput(room, request));
