@@ -5,7 +5,7 @@ import {
   normalizeQuery,
   parseYouTubeVideo,
 } from '../contracts';
-import type { Plan } from './dj-plan';
+import { MAX_SONGS, type Plan } from './dj-plan';
 
 /**
  * "@DJ" requests the rules understand on their own, without the AI (spec 2026-10-18-dj-chat):
@@ -515,6 +515,31 @@ export function quickFavorite(request: string): string | null {
     : null;
 }
 
+/**
+ * "thêm (cho) tôi 4 bài (đi)", "thêm đại vài bài nữa", "cho tôi 3 bài": a number of songs and
+ * nothing about which ones, so more like the song on air. "tôi" is who they are for, never
+ * "my saved songs" (the AI once read it so, 2026-10-19). Matched after the filler is cut.
+ */
+const QUICK_ADD_N =
+  /^((them|bat|mo|phat|add|kiem|chon|lay)( (dai|bua|ngau nhien|random))?( (cho|giup|dum|gium))?( (toi|minh|em|tui|anh|chi|tao|phong|ca phong))?( (dai|bua|ngau nhien|random))? )?(?<n>\d+|mot|hai|ba|bon|nam|vai|may) (bai|bai hat|ca khuc|songs?)( (nua|khac|hay|nao|voi|vao))*$/;
+const COUNT_WORDS: Record<string, number> = {
+  mot: 1,
+  hai: 2,
+  ba: 3,
+  bon: 4,
+  nam: 5,
+  vai: 3,
+  may: 3,
+};
+
+/** "thêm tôi 4 bài": how many (more than MAX_SONGS is the caller's to cap), or null. */
+export function quickAddCount(p: string): number | null {
+  const m = QUICK_ADD_N.exec(p);
+  if (!m) return null;
+  const n = m.groups?.n ?? '';
+  return /^\d+$/.test(n) ? Number(n) : COUNT_WORDS[n];
+}
+
 /** "thêm / bật / phát (bài) …": the verb that adds one named song. */
 const QUICK_ADD =
   /^(them|bat|mo|phat|add|play|cho nghe|order)( (giup|dum|gium|cho) (toi|minh|em|tui)| giup| dum| gium)?( (bai hat|bai|ca khuc|song))? /;
@@ -658,6 +683,21 @@ export function matchQuick(
     return { kind: 'plan', plan: { steps: [{ do: 'resume' }] } };
   if (QUICK_SAVE.test(p))
     return { kind: 'plan', plan: { steps: [{ do: 'save' }] } };
+  const many = quickAddCount(p);
+  if (many)
+    return {
+      kind: 'plan',
+      plan: {
+        steps: [
+          {
+            do: 'find',
+            find: { mode: 'similar_now' },
+            count: Math.min(many, MAX_SONGS),
+            ...(many > MAX_SONGS ? { asked: many } : {}),
+          },
+        ],
+      },
+    };
   const links = quickLinks(request);
   if (links)
     return {

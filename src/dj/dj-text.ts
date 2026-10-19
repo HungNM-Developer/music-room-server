@@ -189,7 +189,10 @@ export function stepText(s: DjStep): string {
     }
   switch (s.reason) {
     case 'notFound':
-      if (s.got !== undefined) return `Chỉ thêm được ${s.got}/${s.wanted} bài`;
+      if (s.got !== undefined)
+        return `Chỉ thêm được ${s.got}/${s.wanted} bài${s.from === 'saved' ? ' từ danh sách bài đã lưu' : s.from === 'played' ? ' từ các bài vừa phát' : ''}`;
+      if (s.from === 'saved') return 'Không có bài đã lưu nào thêm được';
+      if (s.from === 'played') return 'Không có bài vừa phát nào thêm lại được';
       if (s.action === 'playlistPlay')
         return `Playlist "${s.playlist?.name ?? ''}" chưa có bài nào`;
       return s.query

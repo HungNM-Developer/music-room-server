@@ -56,6 +56,8 @@ const TRY_NEXT_EXACT: ErrorCode[] = [
 const STOP_ADDING: ErrorCode[] = ['QUEUE_LIMIT', 'FORBIDDEN', 'RATE_LIMITED'];
 /** Candidates tried beyond the songs wanted (each try is one of the asker's adds). */
 const SPARE_TRIES = 4;
+/** Same from the asker's library (saved / played): songs already known, no lookup. */
+const LIBRARY_SPARE_TRIES = 40;
 
 export type AiPicks = (
   text: string,
@@ -202,11 +204,12 @@ export class DjComboService {
                 (i) => i.track,
               )
             : (await this.library.listFavorites(run.actor)).tracks;
+        // Known songs: a refusal (queued, played lately) costs no lookup, so try them all.
         return this.addSongs(
           run,
           tracks.map((t) => t.externalId),
           s.count,
-          { pin: s.pin },
+          { pin: s.pin, from: s.source, spare: LIBRARY_SPARE_TRIES },
         );
       }
       case 'heart':
@@ -757,6 +760,10 @@ export class DjComboService {
       exact?: boolean;
       /** The artist as understood (YouTube Music's name), for the answer. */
       artist?: string;
+      /** From the asker's library, for the answer ("từ bài đã lưu"). */
+      from?: 'saved' | 'played';
+      /** Candidates tried beyond `count` (default SPARE_TRIES). */
+      spare?: number;
     },
   ): Promise<void> {
     if (run.full) return;
@@ -766,7 +773,8 @@ export class DjComboService {
     // "not found" when nothing went in.
     let refused: AppError | null = null;
     for await (const id of ids) {
-      if (added >= count || ++tries > count + SPARE_TRIES) break;
+      if (added >= count || ++tries > count + (opts.spare ?? SPARE_TRIES))
+        break;
       const wish = run.wish;
       try {
         const { queueItemId } = await this.queue.add(run.actor, {
@@ -815,6 +823,7 @@ export class DjComboService {
         ...(opts.artist ? { artist: opts.artist } : {}),
         // "2 bài chill" but only one could go in.
         ...(added ? { got: added, wanted: count } : {}),
+        ...(opts.from ? { from: opts.from } : {}),
       });
   }
 
