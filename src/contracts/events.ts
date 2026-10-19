@@ -129,6 +129,8 @@ export interface ServerEvents {
   'player:revoked': (data: { reason: PlayerRevokeReason }) => void;
   /** Only to the member's own sockets: on joining and after every save / unsave. */
   'favorite:ids': (data: { trackIds: string[] }) => void;
+  /** To every socket of the account: one of its playlists changed (null id: the list itself). */
+  'playlist:changed': (data: { playlistId: string | null }) => void;
 }
 
 export const ACK_TIMEOUT_MS = 8000;

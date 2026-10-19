@@ -44,6 +44,17 @@ export class Broadcaster {
       this.toSocket(id, event, data);
   }
 
+  /** Every socket signed in to the account, whatever room (or none) it is in. */
+  toUser<E extends EventName>(
+    userId: string,
+    event: E,
+    data: EventData<E>,
+  ): void {
+    for (const socket of this.server?.sockets.sockets.values() ?? [])
+      if ((socket.data as { userId?: string }).userId === userId)
+        socket.emit(event, data);
+  }
+
   /**
    * The room is gone: tell every socket bound to it (members and the speaker page) why, and
    * drop it. `unbind` must see nothing left to clean, so the binding is cleared first.
