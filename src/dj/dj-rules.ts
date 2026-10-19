@@ -438,6 +438,83 @@ const BARE_REMOVE =
 const REPLACE_THIS =
   /^(doi|thay|thay the) (bai nay|bai do|bai kia|no|cai nay|cai do) (thanh|bang|sang|qua) /;
 
+/** A YouTube link as a word of the request (bare ids are not taken: they look like words). */
+function linkId(word: string): string | null {
+  const w = word.replace(/^[("'“‘<[]+|[)"'”’>\].,!?;:]+$/g, '');
+  if (!/youtu/i.test(w)) return null;
+  return parseYouTubeVideo(w)?.videoId ?? null;
+}
+
+/** The videos of the YouTube links in a request, in order (each once). */
+export function linksIn(request: string): string[] {
+  const ids = request
+    .split(/\s+/)
+    .map(linkId)
+    .filter((id): id is string => Boolean(id));
+  return [...new Set(ids)];
+}
+
+/** Around pasted links, only "add it" words: "thêm bài này", "bật giúp tôi", "add". */
+const LINK_WORDS =
+  /^((them|bat|mo|phat|add|play|cho nghe|nghe|queue)( (giup|dum|gium|cho) (toi|minh|em|tui)| giup| dum| gium)?)?( (bai|video|clip|link|cai) (nay|nhe|nha|di)?)?( (bai|video|clip|link) nay)?( (nay|vao hang cho|vao queue))?$/;
+
+/** "@DJ <link>", "thêm bài này <link>": those videos, nothing else asked. */
+function quickLinks(request: string): string[] | null {
+  const ids = linksIn(request);
+  if (!ids.length) return null;
+  let p = plain(
+    request
+      .split(/\s+/)
+      .filter((w) => !linkId(w))
+      .join(' '),
+  );
+  for (;;) {
+    const cut = (' ' + p)
+      .replace(FILLER_END, '')
+      .trim()
+      .replace(FILLER_START, '')
+      .trim();
+    if (cut === p) break;
+    p = cut;
+  }
+  return !p || LINK_WORDS.test(p) ? ids : null;
+}
+
+/**
+ * "Thêm bài Dấu Mưa vào mục yêu thích", "lưu "Dấu Mưa" vào yêu thích": one named song into the
+ * asker's saved songs (Yêu thích), not the queue. The song is taken from the queue when it is
+ * there, else looked up on YouTube (dj-combo).
+ */
+const QUICK_FAVORITE =
+  /^(?<verb>them|luu|save|cho|dua|bo)(?<kind> (?:bai hat|bai|ca khuc|song))? (?<title>.+?) (?:vao|trong) (?:muc |danh sach |list )?(?:yeu thich|bai da luu|da luu|favou?rites?)(?: cua (?:toi|minh|em|tui))?$/;
+
+export function quickFavorite(request: string): string | null {
+  const original = request.trim().replace(/[?!.。…]+$/, '');
+  if (/[,;/&+\n]/.test(original)) return null;
+  const p0 = plain(original);
+  const p = p0.replace(FILLER_START, '');
+  const m = QUICK_FAVORITE.exec((' ' + p).replace(FILLER_END, '').trim());
+  if (!m) return null;
+  const quoted = QUOTED.exec(original);
+  if (quoted) return quoted[1].trim();
+  // The title: the original words between the verb (and "bài") and "vào".
+  const offset = p0.split(' ').length - (p ? p.split(' ').length : 0);
+  const g = m.groups as { verb: string; kind?: string; title: string };
+  const start =
+    offset +
+    g.verb.split(' ').length +
+    (g.kind ? g.kind.trim().split(' ').length : 0);
+  const title = words(original)
+    .slice(start, start + g.title.split(' ').length)
+    .join(' ');
+  // "lưu bài này vào yêu thích": the song on air, a one-button task (not a lookup).
+  return title &&
+    !vagueIn(title) &&
+    !/^(nay|do|dang phat|bai nay)$/.test(g.title)
+    ? title
+    : null;
+}
+
 /** "thêm / bật / phát (bài) …": the verb that adds one named song. */
 const QUICK_ADD =
   /^(them|bat|mo|phat|add|play|cho nghe|order)( (giup|dum|gium|cho) (toi|minh|em|tui)| giup| dum| gium)?( (bai hat|bai|ca khuc|song))? /;
@@ -447,7 +524,7 @@ const QUICK_ADD =
  * in "Có Hẹn Với Thanh Xuân" or "Chạy Ngay Đi" they belong to the title.
  */
 const QUICK_ADD_NOT =
-  /(^| )(va|voi|roi|kem|tang|chuc|nhan|ngay|luon|sau|truoc|nua|tiep|lai|cung|them|playlist|list|moi|hot|top|trending|thinh hanh|giong|tuong tu|vai|may|mot so|cac|nhung|hay nhat|noi tieng|nghe nhieu|da luu|vua phat|da phat|goi y|nao do|gi|bai|bai hat|nhac|ca khuc|songs?|nhieu|it|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi|chuc|tram)( |$)/;
+  /(^| )(va|voi|roi|kem|tang|chuc|nhan|ngay|luon|sau|truoc|nua|tiep|lai|cung|them|playlist|list|moi|hot|top|trending|thinh hanh|giong|tuong tu|vai|may|mot so|cac|nhung|hay nhat|noi tieng|nghe nhieu|da luu|vua phat|da phat|goi y|nao do|gi|bai|bai hat|nhac|ca khuc|songs?|nhieu|it|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi|chuc|tram|vao|luu|yeu thich|favou?rites?)( |$)/;
 /** "… vào hàng chờ": where it goes, not part of the title. */
 const QUICK_INTO = / (vao|trong) (hang cho|danh sach phat|queue)$/;
 const QUICK_BY = /^(cua|of|by)$/;
@@ -581,6 +658,18 @@ export function matchQuick(
     return { kind: 'plan', plan: { steps: [{ do: 'resume' }] } };
   if (QUICK_SAVE.test(p))
     return { kind: 'plan', plan: { steps: [{ do: 'save' }] } };
+  const links = quickLinks(request);
+  if (links)
+    return {
+      kind: 'plan',
+      plan: { steps: [{ do: 'addLink', videoIds: links }] },
+    };
+  const fav = quickFavorite(request);
+  if (fav)
+    return {
+      kind: 'plan',
+      plan: { steps: [{ do: 'save', target: { titles: [fav], said: fav } }] },
+    };
   const add = quickAdd(request, members);
   if (add)
     return {

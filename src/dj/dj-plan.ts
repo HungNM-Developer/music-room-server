@@ -80,6 +80,8 @@ export type PlanStep =
   | { do: 'skip'; count?: number }
   | { do: 'pause' }
   | { do: 'resume' }
+  /** YouTube links pasted in the request: those very videos, nothing searched. */
+  | { do: 'addLink'; videoIds: string[]; pin?: Pin }
   /** The AI translator's add / suggest: songs found by DjFinder. */
   | {
       do: 'find';
