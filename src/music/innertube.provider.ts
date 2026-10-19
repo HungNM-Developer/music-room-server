@@ -29,6 +29,8 @@ export interface MusicSong {
 /** Failures in a row before InnerTube is left alone for a while. */
 export const INNERTUBE_MAX_FAILURES = 3;
 export const INNERTUBE_COOLDOWN_MS = 30 * 60_000;
+/** "Up next" is background work (radio, "giống bài đang phát"): a little more patience. */
+const UP_NEXT_TIMEOUT_MS = 8000;
 /** Result pages YouTube is asked for at most in one search (about 20 videos each). */
 const MAX_PAGES = 4;
 /** Shorts and clips this short are not songs. */
@@ -60,6 +62,9 @@ export class InnerTubeProvider {
   private client: Promise<Innertube> | null = null;
   private failures = 0;
   private offUntil = 0;
+  /** "Up next" failing over and over (seen from some hosts): rested on its own, search stays on. */
+  private upNextFailures = 0;
+  private upNextOffUntil = 0;
 
   constructor(@Inject(ENV) private readonly env: Env) {}
 
@@ -154,7 +159,7 @@ export class InnerTubeProvider {
    * Video ids in YouTube's order, without the video itself; [] when neither answers.
    */
   async upNext(videoId: string): Promise<string[]> {
-    if (!this.available) return [];
+    if (!this.available || Date.now() < this.upNextOffUntil) return [];
     const yt = await this.session();
     const own = (ids: (string | undefined)[]) => [
       ...new Set(
@@ -164,38 +169,47 @@ export class InnerTubeProvider {
         ),
       ),
     ];
-    try {
-      const radio = await withTimeout(
-        yt.music.getUpNext(videoId, true),
-        HTTP_TIMEOUT_MS,
-      );
-      const ids = own(
-        (radio.contents ?? []).map(
-          (x) => (x as { video_id?: string }).video_id,
+    // Both at once: the youtube.com feed is only a stand-in, but waiting for one to time out
+    // before asking the other doubled the wait.
+    const [music, web] = await Promise.allSettled([
+      withTimeout(yt.music.getUpNext(videoId, true), UP_NEXT_TIMEOUT_MS).then(
+        (radio) =>
+          own(
+            (radio.contents ?? []).map(
+              (x) => (x as { video_id?: string }).video_id,
+            ),
+          ),
+      ),
+      withTimeout(yt.getInfo(videoId), UP_NEXT_TIMEOUT_MS).then((info) =>
+        own(
+          (info.watch_next_feed ?? []).map((x) => {
+            const n = x as {
+              video_id?: string;
+              id?: string;
+              content_id?: string;
+            };
+            return n.video_id ?? n.content_id ?? n.id;
+          }),
         ),
-      );
-      if (ids.length) return ids;
-    } catch (e) {
+      ),
+    ]);
+    if (music.status === 'fulfilled' || web.status === 'fulfilled') {
+      this.upNextFailures = 0;
+      if (music.status === 'fulfilled' && music.value.length)
+        return music.value;
+      return web.status === 'fulfilled' ? web.value : [];
+    }
+    // Neither answered: a fresh session next time; after a few in a row, rest "up next".
+    this.client = null;
+    const why = `${String(music.reason)} / ${String(web.reason)}`;
+    if (++this.upNextFailures >= INNERTUBE_MAX_FAILURES) {
+      this.upNextFailures = 0;
+      this.upNextOffUntil = Date.now() + INNERTUBE_COOLDOWN_MS;
       this.logger.warn(
-        `YouTube Music up next for ${videoId} failed: ${String(e)}`,
+        `YouTube up next keeps failing, off for ${INNERTUBE_COOLDOWN_MS / 60_000} min: ${why}`,
       );
-    }
-    try {
-      const info = await withTimeout(yt.getInfo(videoId), HTTP_TIMEOUT_MS);
-      return own(
-        (info.watch_next_feed ?? []).map((x) => {
-          const n = x as {
-            video_id?: string;
-            id?: string;
-            content_id?: string;
-          };
-          return n.video_id ?? n.content_id ?? n.id;
-        }),
-      );
-    } catch (e) {
-      this.logger.warn(`YouTube up next for ${videoId} failed: ${String(e)}`);
-      return [];
-    }
+    } else this.logger.warn(`YouTube up next for ${videoId} failed: ${why}`);
+    return [];
   }
 
   /**
