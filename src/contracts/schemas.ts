@@ -122,6 +122,11 @@ export const C2S = {
   'me:room-delete': z.strictObject({ code: RoomCodeSchema }),
   /** Any member who knows the room's PIN becomes admin. */
   'admin:claim': z.strictObject({ pin: PinSchema }),
+  /**
+   * A room with no owner: a signed-in admin keeps it (never deleted as unused). The admin's
+   * member is tied to the account; a room that has an owner stays theirs (FORBIDDEN).
+   */
+  'room:claim-owner': z.strictObject({}),
   /** Admin only: set or change the room's PIN. */
   'room:set-pin': z.strictObject({ pin: PinSchema }),
   /** Anyone with the room code may open the speaker page (no PIN). */

@@ -398,6 +398,13 @@ export class RealtimeGateway
     });
   }
 
+  @SubscribeMessage('room:claim-owner')
+  claimOwner(@ConnectedSocket() s: AppSocket, @MessageBody() body: unknown) {
+    return this.run('room:claim-owner', s, body, (_input, actor) =>
+      this.members.claimOwner(actor, this.requireUser(s)),
+    );
+  }
+
   @SubscribeMessage('room:set-pin')
   setPin(@ConnectedSocket() s: AppSocket, @MessageBody() body: unknown) {
     return this.run('room:set-pin', s, body, (input, actor) => {

@@ -108,6 +108,7 @@ export class SnapshotService {
       avatarUrl: smallPicture(m.user?.picture) ?? m.avatarUrl ?? null,
       verified: Boolean(m.userId),
       viaSlack: Boolean(m.slackUserId),
+      owner: m.userId !== null && m.userId === room.ownerId,
     }));
 
     let nowPlaying: RoomSnapshot['nowPlaying'] = null;

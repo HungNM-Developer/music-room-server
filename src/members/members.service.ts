@@ -594,6 +594,38 @@ export class MembersService {
     });
   }
 
+  /**
+   * A room nobody owns (its creator never signed in, or is gone): a signed-in admin keeps it,
+   * so it is never deleted as unused. The member is tied to the account first (as signing in
+   * would); a room that already has an owner stays theirs.
+   */
+  async claimOwner(actor: Actor, userId: string): Promise<void> {
+    await this.linkMember(actor.memberId, userId);
+    await this.state.mutate(actor.roomId, async (tx, ctx) => {
+      const me = await this.requireAdmin(tx, actor);
+      if (me.isDevice || (me.userId && me.userId !== userId))
+        throw new AppError('FORBIDDEN');
+      const room = await tx.room.findUniqueOrThrow({
+        where: { id: actor.roomId },
+      });
+      // The creator's sign-in (linkMember) may have just made them the owner.
+      if (room.ownerId === userId) return;
+      if (room.ownerId) throw new AppError('FORBIDDEN');
+      await tx.room.update({
+        where: { id: room.id },
+        data: { ownerId: userId },
+      });
+      await this.activity.log(
+        tx,
+        ctx,
+        actor.roomId,
+        me,
+        'owner_claim',
+        'đã nhận giữ phòng',
+      );
+    });
+  }
+
   /** Admin only: set the PIN (rooms from before PINs) or change it. */
   async setPin(actor: Actor, pin: string): Promise<void> {
     const adminPinHash = await this.auth.hashPin(pin);
