@@ -28,11 +28,19 @@ const EnvSchema = z.object({
   GOOGLE_CLIENT_ID: optionalString,
   /** A3 / A4 / AI1: Last.fm similar tracks and canonical names (free key). */
   LASTFM_API_KEY: optionalString,
-  /** Free AI, tried in this order: Gemini → Groq → OpenRouter (each only with a key). */
+  /**
+   * Free AI, tried in this order: Gemini → Groq → OpenRouter (each only with a key). Each
+   * *_MODEL is a comma-separated list, tried in order: free quotas are per model, so when one
+   * is spent for the day the next answers (AiService).
+   */
   GEMINI_API_KEY: optionalString,
-  GEMINI_MODEL: z.string().default('gemini-flash-lite-latest'),
+  GEMINI_MODEL: z
+    .string()
+    .default('gemini-flash-lite-latest,gemini-3.1-flash-lite'),
   GROQ_API_KEY: optionalString,
-  GROQ_MODEL: z.string().default('qwen/qwen3.8-27b'),
+  GROQ_MODEL: z
+    .string()
+    .default('qwen/qwen3.8-27b,openai/gpt-oss-20b,openai/gpt-oss-120b'),
   OPENROUTER_API_KEY: optionalString,
   OPENROUTER_MODEL: optionalString,
   /** "@DJ": requests that need the AI, per member per hour (requests the rules answer are free). */

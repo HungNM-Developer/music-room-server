@@ -429,11 +429,112 @@ export function howTopic(request: string): GuideTarget | null {
   return null;
 }
 
+/** "thêm / bật / phát (bài) …": the verb that adds one named song. */
+const QUICK_ADD =
+  /^(them|bat|mo|phat|add|play|cho nghe|order)( (giup|dum|gium|cho) (toi|minh|em|tui)| giup| dum| gium)?( (bai hat|bai|ca khuc|song))? /;
+/**
+ * Words that make it more than "add this one song" (a second song, a wish, "play it now",
+ * "a few", "trending", "mười bài"…): the AI reads those. Checked on the words written in lower case only:
+ * in "Có Hẹn Với Thanh Xuân" or "Chạy Ngay Đi" they belong to the title.
+ */
+const QUICK_ADD_NOT =
+  /(^| )(va|voi|roi|kem|tang|chuc|nhan|ngay|luon|sau|truoc|nua|tiep|lai|cung|them|playlist|list|moi|hot|top|trending|thinh hanh|giong|tuong tu|vai|may|mot so|cac|nhung|hay nhat|noi tieng|nghe nhieu|da luu|vua phat|da phat|goi y|nao do|gi|bai|bai hat|nhac|ca khuc|songs?|nhieu|it|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi|chuc|tram)( |$)/;
+/** "… vào hàng chờ": where it goes, not part of the title. */
+const QUICK_INTO = / (vao|trong) (hang cho|danh sach phat|queue)$/;
+const QUICK_BY = /^(cua|of|by)$/;
+/** Quotes around a title: "Từ Đầu", “Từ Đầu”, 'Từ Đầu'. */
+const QUOTED = /["“”'‘’«»]([^"“”'‘’«»]+)["“”'‘’«»]/;
+
+/**
+ * "Thêm bài "Từ Đầu" của Chillies", "bật Lạc Trôi", "add Waiting For You": one song named by
+ * its title (and maybe its artist), nothing else. `members`: "của Lan" names who picked
+ * songs when Lan is in the room, so that one goes to the AI.
+ */
+export function quickAdd(
+  request: string,
+  members: string[] = [],
+): { title: string; artist?: string } | null {
+  const original = request.trim().replace(/[?!.。…]+$/, '');
+  // "Lạc Trôi, Nàng Thơ", "A / B", "A & B": several songs (or a wish after a comma).
+  if (/[,;/&+\n]/.test(original)) return null;
+  const p0 = plain(original);
+  const p = p0.replace(FILLER_START, '');
+  const offset = p0.split(' ').length - (p ? p.split(' ').length : 0);
+  const verb = QUICK_ADD.exec(p + ' ');
+  if (!verb) return null;
+  let ws = words(original).slice(offset + verb[0].trim().split(' ').length);
+  const into = QUICK_INTO.exec(' ' + plain(ws.join(' ')));
+  if (into) ws = ws.slice(0, ws.length - into[0].trim().split(' ').length);
+  const rest = tail(ws.join(' '), 0);
+  const restPlain = plain(rest);
+  const quoted = QUOTED.exec(original);
+  // The words written in lower case; capitalised or quoted ones (a title's) blanked out.
+  const inQuotes = new Set(quoted ? words(quoted[1]) : []);
+  const lower = words(rest)
+    .map((w) => (w === w.toLowerCase() && !inQuotes.has(w) ? plain(w) : '_'))
+    .join(' ');
+  if (
+    !restPlain ||
+    restPlain.split(' ').length > 10 ||
+    /\d/.test(restPlain) ||
+    QUICK_ADD_NOT.test(lower) ||
+    /^(cua|of|by) /.test(restPlain) ||
+    vagueIn(rest)
+  )
+    return null;
+  const rw = words(rest);
+  let title: string;
+  let artist: string | undefined;
+  if (quoted) {
+    title = quoted[1].trim();
+    // After the quoted title: nothing, or "của / of / by <artist>".
+    let after = words(original.slice(quoted.index + quoted[0].length));
+    const intoAfter = QUICK_INTO.exec(' ' + plain(after.join(' ')));
+    if (intoAfter)
+      after = after.slice(
+        0,
+        after.length - intoAfter[0].trim().split(' ').length,
+      );
+    const afterRest = tail(after.join(' '), 0);
+    const ap = words(afterRest);
+    if (ap.length && !QUICK_BY.test(plain(ap[0]))) return null;
+    artist = ap.slice(1).join(' ') || undefined;
+    if (ap.length && !artist) return null;
+  } else {
+    // The artist follows the last "của / of / by" written in lower case: "Em Của Ngày Hôm
+    // Qua của Sơn Tùng". A title like "Em Của Ngày Hôm Qua" keeps its capital "Của".
+    const lowercaseOnly = rest === rest.toLowerCase();
+    let at = -1;
+    for (let i = rw.length - 2; i >= 1; i--)
+      if (QUICK_BY.test(plain(rw[i])) && rw[i] === rw[i].toLowerCase()) {
+        at = i;
+        break;
+      }
+    title = (at >= 0 ? rw.slice(0, at) : rw).join(' ');
+    artist = at >= 0 ? rw.slice(at + 1).join(' ') : undefined;
+    // "em của ngày hôm qua" typed in lower case: one word before "của" may be the title's.
+    if (artist && lowercaseOnly && title.split(' ').length < 2) return null;
+  }
+  if (!title || vagueIn(title) || (artist && vagueIn(artist))) return null;
+  if (
+    artist &&
+    members.some(
+      (m) =>
+        plain(m) === plain(artist) || plain(m).startsWith(plain(artist) + ' '),
+    )
+  )
+    return null;
+  return artist ? { title, artist } : { title };
+}
+
 /**
  * The short, certain requests the DJ handles without the AI: every word must belong to the
  * pattern (polite words aside). Anything left over goes to the AI translator: never a guess.
  */
-export function matchQuick(request: string): QuickMatch | null {
+export function matchQuick(
+  request: string,
+  members: string[] = [],
+): QuickMatch | null {
   // A how-to question is answered by showing the button, never by doing it.
   if (isHowQuestion(request)) {
     const guide = howTopic(request);
@@ -468,6 +569,23 @@ export function matchQuick(request: string): QuickMatch | null {
     return { kind: 'plan', plan: { steps: [{ do: 'resume' }] } };
   if (QUICK_SAVE.test(p))
     return { kind: 'plan', plan: { steps: [{ do: 'save' }] } };
+  const add = quickAdd(request, members);
+  if (add)
+    return {
+      kind: 'plan',
+      plan: {
+        steps: [
+          {
+            do: 'find',
+            find: {
+              titles: [add.title],
+              ...(add.artist ? { artist: add.artist } : {}),
+            },
+            count: 1,
+          },
+        ],
+      },
+    };
   const short = p.split(' ').length <= 10;
   // A question about the room asks something ("còn mấy bài", "tên gì", "ai chọn"…):
   // "cho cả playlist Chill vào hàng chờ" names the queue but asks nothing.

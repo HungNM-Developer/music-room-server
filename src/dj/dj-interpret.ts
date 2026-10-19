@@ -143,7 +143,7 @@ export async function interpret({
   platform,
   ai,
 }: InterpretInput): Promise<Decision> {
-  const quick = matchQuick(request);
+  const quick = matchQuick(request, room.members);
   if (quick)
     return quick.kind === 'plan' ? planFor(quick.plan, platform) : quick;
   if (!ai) return withoutAi(request, platform);
