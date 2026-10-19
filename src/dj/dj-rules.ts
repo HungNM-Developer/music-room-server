@@ -1,4 +1,5 @@
 import {
+  type DjClarify,
   type GuideTarget,
   type InfoKind,
   normalizeQuery,
@@ -393,6 +394,7 @@ export function matchRules(request: string): RuleMatch | null {
 
 export type QuickMatch =
   | { kind: 'hello' }
+  | { kind: 'clarify'; about: DjClarify }
   | { kind: 'info'; info: InfoKind }
   | { kind: 'guide'; guide: GuideTarget }
   | { kind: 'plan'; plan: Plan };
@@ -428,6 +430,13 @@ export function howTopic(request: string): GuideTarget | null {
       return guide;
   return null;
 }
+
+/** "xoá đi", "gỡ bài đi": removing with nothing named. Removing is never a guess: ask. */
+const BARE_REMOVE =
+  /^(xoa|go|go bo|bo|huy|remove|delete)( (bai|bai hat|no|cai do|di|nha|nhe|luon|giup|dum|gium|toi|minh|em|tui))*$/;
+/** "đổi bài này thành Nàng Thơ": "bài này" names no queue song (the AI guessed one). */
+const REPLACE_THIS =
+  /^(doi|thay|thay the) (bai nay|bai do|bai kia|no|cai nay|cai do) (thanh|bang|sang|qua) /;
 
 /** "thêm / bật / phát (bài) …": the verb that adds one named song. */
 const QUICK_ADD =
@@ -552,6 +561,9 @@ export function matchQuick(
     if (cut === p || !cut) break;
     p = cut;
   }
+  if (BARE_REMOVE.test(p)) return { kind: 'clarify', about: 'removeScope' };
+  if (REPLACE_THIS.test(p + ' '))
+    return { kind: 'clarify', about: 'whichSong' };
   if (QUICK_SKIP_N.test(p) || QUICK_SKIP.test(p)) {
     const count = Number(/(\d+) bai$/.exec(p)?.[1] ?? 1);
     return {
@@ -594,9 +606,11 @@ export function matchQuick(
     /(^| )(bao nhieu|may|gi|nao|ai|bao gio|khi nao|bao lau|chua|khong|what('s)?|who|when|how many|how long)( |$)/.test(
       p,
     );
-  if (short && asks && !ACTION_INSIDE.test(p) && !similarIn(original, p))
+  // A task word outside the question itself ("tôi đã thêm mấy bài" asks, "… thì xoá hết" acts).
+  if (short && asks && !similarIn(original, p))
     for (const [info, re] of INFOS)
-      if (re.test(p)) return { kind: 'info', info };
+      if (re.test(p) && !ACTION_INSIDE.test(p.replace(re, ' ')))
+        return { kind: 'info', info };
   if (HOW.test(p))
     for (const [guide, re] of GUIDES)
       if (re.test(p) && (guide !== 'block' || /chặn|block/i.test(original)))

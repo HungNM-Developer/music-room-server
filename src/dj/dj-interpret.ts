@@ -1,4 +1,9 @@
-import type { DjClarify, GuideTarget, InfoKind } from '../contracts';
+import {
+  type DjClarify,
+  type GuideTarget,
+  type InfoKind,
+  normalizeQuery,
+} from '../contracts';
 import { type Plan, planCombo, type Target } from './dj-plan';
 import { howTopic, isHowQuestion, matchQuick, matchRules } from './dj-rules';
 import {
@@ -131,8 +136,32 @@ export function guideOfPlan(plan: Plan): GuideTarget | null {
   }
 }
 
+/**
+ * The AI's plan checked before anything is done: a removal that both takes every song and
+ * picks some ("all" with a place) is a guess, and so is replacing a song with itself ("đổi
+ * bài này thành Nàng Thơ" read as Nàng Thơ → Nàng Thơ). Both are asked instead.
+ */
+export function unsafeStep(plan: Plan): DjClarify | null {
+  for (const s of plan.steps) {
+    if (
+      s.do === 'remove' &&
+      s.target.all &&
+      (s.target.positions?.length || s.target.first || s.target.last)
+    )
+      return 'removeScope';
+    if (s.do === 'replaceWith') {
+      const to = new Set((s.find.titles ?? []).map(normalizeQuery));
+      if ((s.target.titles ?? []).some((t) => to.has(normalizeQuery(t))))
+        return 'whichSong';
+    }
+  }
+  return null;
+}
+
 /** A plan as the platform takes it: one-button tasks become their button on the room page. */
 function planFor(plan: Plan, platform: Platform): Decision {
+  const unsafe = unsafeStep(plan);
+  if (unsafe) return { kind: 'clarify', about: unsafe };
   const single = platform === 'room' ? guideOfSingle(plan) : null;
   return single ? { kind: 'guide', guide: single } : { kind: 'plan', plan };
 }
