@@ -162,6 +162,12 @@ export interface MemberView {
   online: boolean;
   /** N1: playing the room on their own device ("Nghe cùng"), usually away from the office. */
   listening: boolean;
+  /** L1: the picture of the Google account behind the member; null for guests. */
+  avatarUrl: string | null;
+  /** L1: signed in with Google (a real account behind the name). */
+  verified: boolean;
+  /** Đợt 3: acting from a linked Slack channel ("Lan (Slack)" when the name was taken). */
+  viaSlack: boolean;
 }
 
 /** A1: one song this room has played (PLAYED or SKIPPED), all its plays together. */
