@@ -291,6 +291,17 @@ export const C2S = {
   }),
   /** N1: this device plays the room for itself ("Nghe cùng") — or stops. */
   'listen:set': z.strictObject({ on: z.boolean() }),
+  /**
+   * N1: this listener's player cannot play the song on air ("Video unavailable"). The server
+   * asks YouTube again and skips the song only when it really does not play here.
+   */
+  'listen:unplayable': z.strictObject({
+    queueItemId: Id,
+    errorCode: z
+      .number()
+      .int()
+      .refine((c) => (PLAYER_ERROR_CODES as readonly number[]).includes(c)),
+  }),
   /** L4: find a song for each pasted line (free sources first, then YouTube search). */
   'songlist:match': z.strictObject({
     lines: z.array(line(SONGLIST_LINE_MAX)).min(1).max(SONGLIST_MAX_LINES),

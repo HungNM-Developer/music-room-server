@@ -31,6 +31,7 @@ import { McService } from '../ai/mc.service';
 import { TtsService } from '../tts/tts.service';
 import { voiceOf } from '../tts/tts-lang';
 import { SuggestService } from '../music/suggest.service';
+import { TrackCacheService } from '../music/track-cache.service';
 import { pickFallback } from './fallback';
 import { LeaseService } from './lease.service';
 import { countVotes, requiredVotes } from './skip-votes';
@@ -39,6 +40,8 @@ export type AdvanceReason = 'ended' | 'timer' | 'skip' | 'error' | 'start';
 
 /** Drift (s) between the player's report and our estimate that triggers a re-broadcast. */
 const DRIFT_SEC = 2;
+/** YouTube's "not found / private" (100) and "not playable in an embed / here" (101, 150). */
+const UNPLAYABLE_CODES: readonly number[] = [100, 101, 150];
 const FALLBACK_RECENT = 20;
 /** Re-making waiting wishes' Edge audio (lost on restart): how often per room, how many. */
 const WARM_EVERY_MS = 60_000;
@@ -70,6 +73,7 @@ export class PlaybackService
     private readonly suggest: SuggestService,
     private readonly mc: McService,
     private readonly tts: TtsService,
+    private readonly tracks: TrackCacheService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -621,7 +625,7 @@ export class PlaybackService
       await this.state.mutate(actor.roomId, async (tx, ctx) => {
         const item = await tx.queueItem.findUnique({
           where: { id: input.queueItemId },
-          include: { track: { select: { title: true } } },
+          include: { track: { select: { title: true, externalId: true } } },
         });
         await this.advance(
           tx,
@@ -640,6 +644,11 @@ export class PlaybackService
             `Bỏ qua "${item.track.title}" vì video không phát được (mã ${input.errorCode ?? '?'})`,
             { title: item.track.title, code: input.errorCode },
           );
+          // Gone / not playable here: never picked again (radio, suggestions).
+          if (UNPLAYABLE_CODES.includes(input.errorCode ?? 0))
+            ctx.afterCommit(
+              () => void this.tracks.markUnplayable(item.track.externalId),
+            );
         }
       });
       return;
@@ -678,6 +687,42 @@ export class PlaybackService
         data: { positionSec: input.positionSec, positionAt: now },
       });
     }
+  }
+
+  /**
+   * A listener's own player (listen-along) says the song on air cannot play. Their word is
+   * not taken as is: YouTube is asked again, and only a video that really does not play here
+   * is skipped (and never picked again). Matters most when the room has no player device:
+   * nobody else would notice, and the room would "play" a silent song to its end.
+   */
+  async listenerUnplayable(
+    actor: Actor,
+    input: CommandInput<'listen:unplayable'>,
+  ): Promise<void> {
+    if (!UNPLAYABLE_CODES.includes(input.errorCode)) return;
+    const ps = await this.prisma.playbackState.findUnique({
+      where: { roomId: actor.roomId },
+    });
+    if (!ps || ps.currentItemId !== input.queueItemId) return;
+    const item = await this.prisma.queueItem.findUnique({
+      where: { id: input.queueItemId },
+      include: { track: { select: { title: true, externalId: true } } },
+    });
+    if (!item) return;
+    if (await this.tracks.recheck(item.track.externalId)) return;
+    await this.state.mutate(actor.roomId, async (tx, ctx) => {
+      // STALE_ITEM: the room moved on meanwhile (someone skipped, the player reported).
+      await this.advance(tx, ctx, actor.roomId, input.queueItemId, 'error');
+      await this.activity.log(
+        tx,
+        ctx,
+        actor.roomId,
+        null,
+        'track_error',
+        `Bỏ qua "${item.track.title}" vì video không phát được ở đây (mã ${input.errorCode})`,
+        { title: item.track.title, code: input.errorCode },
+      );
+    });
   }
 
   // ------------------------------------------------------------ side effects

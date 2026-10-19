@@ -36,8 +36,22 @@ export interface VideoItem {
     categoryId?: string;
     thumbnails?: Record<string, { url?: string } | undefined>;
   };
-  contentDetails?: { duration?: string };
-  status?: { embeddable?: boolean };
+  contentDetails?: {
+    duration?: string;
+    regionRestriction?: { allowed?: string[]; blocked?: string[] };
+  };
+  status?: { embeddable?: boolean; privacyStatus?: string };
+}
+
+/** Where the room plays: a video blocked here shows "Video unavailable" in every player. */
+export const PLAY_REGION = 'VN';
+
+/** Embeddable is not enough: a video can be embeddable yet blocked in the office's country. */
+function playableHere(v: VideoItem): boolean {
+  const r = v.contentDetails?.regionRestriction;
+  if (r?.blocked?.includes(PLAY_REGION)) return false;
+  if (r?.allowed && !r.allowed.includes(PLAY_REGION)) return false;
+  return v.status?.privacyStatus !== 'private';
 }
 
 /** A Data API `videos` item → what we store about a track. */
@@ -54,7 +68,7 @@ export function videoToTrackInfo(v: VideoItem): TrackInfo {
     durationSec: duration && duration > 0 ? duration : null,
     thumbnailUrl:
       thumbs.medium?.url ?? thumbs.high?.url ?? thumbs.default?.url ?? null,
-    embeddable: v.status?.embeddable !== false,
+    embeddable: v.status?.embeddable !== false && playableHere(v),
     live,
   };
 }

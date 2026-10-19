@@ -36,6 +36,36 @@ export class TrackCacheService {
     return row;
   }
 
+  /**
+   * A player said "Video unavailable": asks YouTube again (Data API, the country's block
+   * included) and stores the answer. false = not playable here (or gone); true = YouTube
+   * says it plays, so the error was the player's own.
+   */
+  async recheck(videoId: string): Promise<boolean> {
+    try {
+      const info = await this.youtube.getTrack(videoId);
+      await this.upsert(info);
+      return info.embeddable && !info.live;
+    } catch (e) {
+      if (
+        e instanceof AppError &&
+        (e.code === 'TRACK_NOT_FOUND' || e.code === 'TRACK_NOT_EMBEDDABLE')
+      ) {
+        await this.markUnplayable(videoId);
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  /** Never offered again (radio, suggestions, library): the video does not play here. */
+  async markUnplayable(videoId: string): Promise<void> {
+    await this.prisma.track.updateMany({
+      where: { id: trackId(videoId) },
+      data: { embeddable: false },
+    });
+  }
+
   upsert(info: TrackInfo): Promise<Track> {
     const data = {
       provider: 'youtube',
