@@ -11,6 +11,9 @@ const API = 'https://ws.audioscrobbler.com/2.0/';
 const TIMEOUT_MS = 6000;
 const CACHE_MS = 6 * 3600_000;
 const CACHE_MAX = 2000;
+/** Unreachable / 5xx this many times in a row: rest a little (no requests, no logs). */
+const MAX_FAILURES = 3;
+const REST_AFTER_FAILURES_MS = 2 * 60_000;
 
 export interface LastFmTrack {
   artist: string;
@@ -24,6 +27,7 @@ export class LastFmService {
   private readonly logger = new Logger(LastFmService.name);
   private readonly cache = new Map<string, { at: number; value: unknown }>();
   private failingUntil = 0;
+  private failures = 0;
 
   constructor(@Inject(ENV) private readonly env: Env) {}
 
@@ -45,8 +49,23 @@ export class LastFmService {
       autocorrect: '1',
     }))
       url.searchParams.set(k, v);
+    const get = () => fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const pause = () => new Promise((r) => setTimeout(r, 1500));
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      // A network error, a timeout or a 5xx (Last.fm is sometimes briefly down) gets one
+      // more try after a short pause.
+      let res: Response;
+      try {
+        res = await get();
+      } catch {
+        await pause();
+        res = await get();
+      }
+      if (res.status >= 500) {
+        await pause();
+        res = await get();
+      }
+      if (res.status >= 500) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { error?: number; message?: string };
       // 6 = not found: a real answer, cache it. 29 = rate limited, 10/26 = bad key.
       if (body.error && body.error !== 6) {
@@ -55,12 +74,22 @@ export class LastFmService {
         throw new Error(`Last.fm ${body.error}: ${body.message ?? ''}`);
       }
       const value = body.error ? null : body;
+      this.failures = 0;
       if (this.cache.size >= CACHE_MAX)
         this.cache.delete(this.cache.keys().next().value as string);
       this.cache.set(cacheKey, { at: Date.now(), value });
       return value;
     } catch (e) {
-      this.logger.warn(`${params.method} failed: ${String(e)}`);
+      if (++this.failures >= MAX_FAILURES) {
+        this.failures = 0;
+        this.failingUntil = Math.max(
+          this.failingUntil,
+          Date.now() + REST_AFTER_FAILURES_MS,
+        );
+        this.logger.warn(
+          `Last.fm keeps failing, resting ${REST_AFTER_FAILURES_MS / 60_000} min: ${String(e)}`,
+        );
+      } else this.logger.warn(`${params.method} failed: ${String(e)}`);
       return null;
     }
   }
