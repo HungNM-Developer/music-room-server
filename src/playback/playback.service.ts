@@ -345,9 +345,12 @@ export class PlaybackService
       ).votes;
     const yes = tally(true);
     const no = tally(false);
+    const settings = readSettings(room.settings);
+    const minVotes = settings.skipMinVotes;
     const required = requiredVotes(
       voters.size,
-      readSettings(room.settings).skipThreshold,
+      settings.skipThreshold,
+      minVotes,
     );
     if (yes > 0 && yes >= required) {
       await this.advance(tx, ctx, roomId, ps.currentItemId, 'skip');
@@ -366,7 +369,8 @@ export class PlaybackService
     if (!item.skipVoteEndsAt) return;
     const undecided = Math.max(0, voters.size - yes - no);
     const expired = item.skipVoteEndsAt.getTime() <= ctx.now.getTime();
-    if (expired && yes > no && yes >= SKIP_MIN_YES) {
+    // Time's up: more ✅ than ❌ skips, never below the room's minimum.
+    if (expired && yes > no && yes >= Math.max(SKIP_MIN_YES, minVotes)) {
       await this.advance(tx, ctx, roomId, ps.currentItemId, 'skip');
       await this.activity.log(
         tx,
@@ -382,7 +386,8 @@ export class PlaybackService
     // Best case for ✅: every online voter who has not voted yet says ✅.
     const best = yes + undecided;
     const canWin = best >= required || (best > no && best >= SKIP_MIN_YES);
-    if (!expired && yes > 0 && canWin) return;
+    // With a minimum set, people who are not online (Slack) may still vote: wait for the end.
+    if (!expired && yes > 0 && (canWin || minVotes > 1)) return;
     await tx.skipVote.deleteMany({ where: { queueItemId: item.id } });
     await tx.queueItem.update({
       where: { id: item.id },
