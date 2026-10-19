@@ -45,6 +45,7 @@ export class SnapshotService {
         members: {
           where: { leftAt: null, kickedAt: null },
           orderBy: { createdAt: 'asc' },
+          include: { user: { select: { picture: true } } },
         },
         blockedTracks: {
           select: { trackId: true },
@@ -95,6 +96,9 @@ export class SnapshotService {
       canDj: m.canDj,
       online: online.has(m.id),
       listening: this.presence.isListening(m.id),
+      avatarUrl: m.user?.picture ?? null,
+      verified: Boolean(m.userId),
+      viaSlack: Boolean(m.slackUserId),
     }));
 
     let nowPlaying: RoomSnapshot['nowPlaying'] = null;
