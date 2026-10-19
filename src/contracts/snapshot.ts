@@ -168,6 +168,8 @@ export interface MemberView {
   verified: boolean;
   /** Đợt 3: acting from a linked Slack channel ("Lan (Slack)" when the name was taken). */
   viaSlack: boolean;
+  /** L6: the member of the account that owns (keeps) the room. */
+  owner: boolean;
 }
 
 /** A1: one song this room has played (PLAYED or SKIPPED), all its plays together. */
