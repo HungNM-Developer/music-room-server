@@ -36,6 +36,8 @@ export interface ChatUser {
   /** The display name from the person's profile; '' when the app did not give it. */
   profileName: string;
   email: string | null;
+  /** The profile picture; null / absent when the app did not give one. */
+  avatarUrl?: string | null;
 }
 
 /** Shown while the chat app hides the person's name. */
@@ -255,16 +257,22 @@ export class ChatRoomService {
           : isPlaceholder(tied.displayName)
             ? user.name
             : '';
-      if (wanted) {
-        const name = await this.freeName(roomId, wanted, tied.id);
-        if (name && name !== tied.displayName) {
-          return this.state.mutate(roomId, (tx) =>
-            tx.member.update({
-              where: { id: tied.id },
-              data: { displayName: name, displayNameKey: nameKey(name) },
-            }),
-          );
-        }
+      const name = wanted ? await this.freeName(roomId, wanted, tied.id) : null;
+      const rename = Boolean(name && name !== tied.displayName);
+      // Their Slack picture, kept up to date (shown when no Google picture is behind them).
+      const picture = user.avatarUrl && user.avatarUrl !== tied.avatarUrl;
+      if (rename || picture) {
+        return this.state.mutate(roomId, (tx) =>
+          tx.member.update({
+            where: { id: tied.id },
+            data: {
+              ...(rename && name
+                ? { displayName: name, displayNameKey: nameKey(name) }
+                : {}),
+              ...(picture ? { avatarUrl: user.avatarUrl } : {}),
+            },
+          }),
+        );
       }
       return tied;
     }
@@ -281,7 +289,10 @@ export class ChatRoomService {
       if (mine) {
         return this.prisma.member.update({
           where: { id: mine.id },
-          data: { slackUserId: user.userId },
+          data: {
+            slackUserId: user.userId,
+            ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
+          },
         });
       }
     }
@@ -306,6 +317,7 @@ export class ChatRoomService {
               MEMBER_COLORS[Math.floor(Math.random() * MEMBER_COLORS.length)],
             canDj: settings.allowGuestDj,
             slackUserId: user.userId,
+            avatarUrl: user.avatarUrl ?? null,
           },
         });
         await this.activity.log(

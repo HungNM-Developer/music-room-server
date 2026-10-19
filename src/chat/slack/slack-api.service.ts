@@ -6,6 +6,8 @@ export interface SlackProfile {
   /** '' when Slack did not tell us (users.info failed or the user has no name). */
   name: string;
   email: string | null;
+  /** The profile picture (192 px); null when Slack gave none. */
+  image: string | null;
 }
 
 const PROFILE_TTL_MS = 60 * 60_000;
@@ -159,10 +161,11 @@ export class SlackApi {
       name: p.name || fallbackName,
       profileName: p.name,
       email: p.email,
+      avatarUrl: p.image,
     };
   }
 
-  /** Display name and email (needs users:read and users:read.email), cached for an hour. */
+  /** Display name, email and picture (needs users:read and users:read.email), cached for an hour. */
   async profile(userId: string): Promise<SlackProfile> {
     const hit = this.profiles.get(userId);
     if (hit && Date.now() - hit.at < PROFILE_TTL_MS) return hit.p;
@@ -170,7 +173,14 @@ export class SlackApi {
       user: {
         name?: string;
         real_name?: string;
-        profile?: { display_name?: string; real_name?: string; email?: string };
+        profile?: {
+          display_name?: string;
+          real_name?: string;
+          email?: string;
+          image_192?: string;
+          image_72?: string;
+          image_48?: string;
+        };
       };
     }>('users.info', { user: userId }, true);
     const u = r?.user;
@@ -182,6 +192,11 @@ export class SlackApi {
         u?.name ||
         '',
       email: u?.profile?.email ?? null,
+      image:
+        u?.profile?.image_192 ||
+        u?.profile?.image_72 ||
+        u?.profile?.image_48 ||
+        null,
     };
     if (r && p.name) this.profiles.set(userId, { at: Date.now(), p });
     else

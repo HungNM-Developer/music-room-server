@@ -96,7 +96,8 @@ export class SnapshotService {
       canDj: m.canDj,
       online: online.has(m.id),
       listening: this.presence.isListening(m.id),
-      avatarUrl: m.user?.picture ?? null,
+      // The Google account's picture first, else the Slack one.
+      avatarUrl: m.user?.picture ?? m.avatarUrl ?? null,
       verified: Boolean(m.userId),
       viaSlack: Boolean(m.slackUserId),
     }));
