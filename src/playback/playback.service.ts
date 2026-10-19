@@ -40,6 +40,12 @@ export type AdvanceReason = 'ended' | 'timer' | 'skip' | 'error' | 'start';
 
 /** Drift (s) between the player's report and our estimate that triggers a re-broadcast. */
 const DRIFT_SEC = 2;
+/**
+ * How often the watchdog looks for songs past their end. The end-of-song timer lives in one
+ * process's memory: a deploy (two instances for a moment), a restart or a failed advance can
+ * lose it, and a room without a player device would then sit on a finished song for ever.
+ */
+const WATCHDOG_EVERY_MS = 30_000;
 /** YouTube's "not found / private" (100) and "not playable in an embed / here" (101, 150). */
 const UNPLAYABLE_CODES: readonly number[] = [100, 101, 150];
 const FALLBACK_RECENT = 20;
@@ -55,6 +61,7 @@ export class PlaybackService
   implements OnApplicationBootstrap, OnModuleDestroy
 {
   private readonly logger = new Logger(PlaybackService.name);
+  private watchdog: NodeJS.Timeout | null = null;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly warmedAt = new Map<string, number>();
   /** `roomId item` whose line is being made right now: re-sent once, when the audio is ready. */
@@ -85,9 +92,15 @@ export class PlaybackService
       this.clearVoteTimer(roomId);
     });
     await this.restore();
+    this.watchdog = setInterval(
+      () => void this.sweepOverdue(),
+      WATCHDOG_EVERY_MS,
+    );
+    this.watchdog.unref();
   }
 
   onModuleDestroy(): void {
+    if (this.watchdog) clearInterval(this.watchdog);
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     for (const t of this.voteTimers.values()) clearTimeout(t);
@@ -882,13 +895,56 @@ export class PlaybackService
         this.advance(tx, ctx, roomId, itemId, 'timer'),
       );
     } catch (e) {
-      // STALE_ITEM: the song changed meanwhile; ROOM_NOT_FOUND: the room was just deleted.
-      const expected =
-        e instanceof AppError &&
-        (e.code === 'STALE_ITEM' || e.code === 'ROOM_NOT_FOUND');
+      // STALE_ITEM: the song changed meanwhile — possibly in another instance (a deploy),
+      // whose timer for the new song dies with it: time the song now on air from here too.
+      if (e instanceof AppError && e.code === 'STALE_ITEM') {
+        if (!this.state.isClosing) await this.scheduleTimer(roomId);
+        return;
+      }
+      // ROOM_NOT_FOUND: the room was just deleted. Anything else: the watchdog retries.
+      const expected = e instanceof AppError && e.code === 'ROOM_NOT_FOUND';
       if (!expected && !this.state.isClosing) {
         this.logger.error(`advance timer failed for ${roomId}: ${String(e)}`);
       }
+    }
+  }
+
+  /**
+   * The safety net under the end-of-song timers: a playing song well past its end (timer
+   * lost or its advance failed) is advanced now. Several instances may sweep at once: the
+   * room lock and STALE_ITEM let only one advance.
+   */
+  async sweepOverdue(): Promise<void> {
+    if (this.state.isClosing) return;
+    try {
+      const playing = await this.prisma.playbackState.findMany({
+        where: { status: 'PLAYING', currentItemId: { not: null } },
+      });
+      if (!playing.length) return;
+      const items = await this.prisma.queueItem.findMany({
+        where: { id: { in: playing.map((p) => p.currentItemId!) } },
+        select: { id: true, track: { select: { durationSec: true } } },
+      });
+      const duration = new Map(
+        items.map((i) => [i.id, i.track.durationSec] as const),
+      );
+      const now = Date.now();
+      for (const ps of playing) {
+        const d = duration.get(ps.currentItemId!);
+        if (!d) continue;
+        const overdueMs =
+          (estimatePosition(ps, now) - d) * 1000 - this.timing.advanceGraceMs;
+        // Past the timer's own moment by more than a sweep: that timer is not coming.
+        if (overdueMs > WATCHDOG_EVERY_MS) {
+          this.logger.warn(
+            `room ${ps.roomId}: song ended ${Math.round(overdueMs / 1000)}s ago without advancing; advancing now`,
+          );
+          await this.onTimer(ps.roomId, ps.currentItemId!);
+        }
+      }
+    } catch (e) {
+      if (!this.state.isClosing)
+        this.logger.error(`overdue sweep failed: ${String(e)}`);
     }
   }
 
