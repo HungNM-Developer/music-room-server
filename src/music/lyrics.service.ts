@@ -10,7 +10,10 @@ import { parseTitle } from './title-parser';
  */
 
 const API = 'https://lrclib.net/api/search';
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = 10_000;
+/** LRCLIB down (5xx, network, timeouts) this many times in a row: rest a little. */
+const MAX_FAILURES = 3;
+const REST_AFTER_FAILURES_MS = 2 * 60_000;
 const FOUND_MS = 6 * 3600_000;
 const MISSING_MS = 3600_000;
 const CACHE_MAX = 500;
@@ -69,8 +72,9 @@ export class LyricsService {
     string,
     { at: number; value: LyricsView | null }
   >();
-  /** LRCLIB answered 429 twice: wait before asking again. */
+  /** LRCLIB answered 429 twice, or failed MAX_FAILURES times in a row: wait before asking again. */
   private restingUntil = 0;
+  private failures = 0;
   /** One LRCLIB request per song, however many devices ask at the same moment. */
   private readonly inFlight = new Map<string, Promise<LyricsView | null>>();
 
@@ -107,9 +111,19 @@ export class LyricsService {
     let value: LyricsView | null;
     try {
       value = await this.fetch(artist, song, track.durationSec);
+      this.failures = 0;
     } catch (e) {
-      // Network trouble or 429: not remembered as "no lyrics".
-      this.logger.warn(`LRCLIB failed for ${trackId}: ${String(e)}`);
+      // Network trouble, LRCLIB down or 429: not remembered as "no lyrics", the device asks
+      // again later. While resting, no request is made and nothing is logged.
+      if (Date.now() >= this.restingUntil || !/resting/.test(String(e))) {
+        if (++this.failures >= MAX_FAILURES) {
+          this.failures = 0;
+          this.restingUntil = Date.now() + REST_AFTER_FAILURES_MS;
+          this.logger.warn(
+            `LRCLIB keeps failing, resting ${REST_AFTER_FAILURES_MS / 60_000} min: ${String(e)}`,
+          );
+        } else this.logger.warn(`LRCLIB failed for ${trackId}: ${String(e)}`);
+      }
       throw new AppError('RATE_LIMITED', { seconds: 60 });
     }
     if (this.cache.size >= CACHE_MAX)
@@ -123,7 +137,7 @@ export class LyricsService {
     song: string,
     duration: number | null,
   ): Promise<LyricsView | null> {
-    if (Date.now() < this.restingUntil) throw new Error('resting after 429');
+    if (Date.now() < this.restingUntil) throw new Error('LRCLIB resting');
     const url = new URL(API);
     if (artist) {
       url.searchParams.set('track_name', song);
@@ -136,10 +150,23 @@ export class LyricsService {
         headers: { 'user-agent': 'MusicRoom/1.0 (office shared music)' },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-    let res = await get();
+    const pause = () => new Promise((r) => setTimeout(r, 1500));
+    // LRCLIB is a free service that is sometimes overloaded (503) or slow: a network error,
+    // a timeout or a 5xx gets one more try after a short pause.
+    let res: Response;
+    try {
+      res = await get();
+    } catch {
+      await pause();
+      res = await get();
+    }
+    if (res.status >= 500) {
+      await pause();
+      res = await get();
+    }
     // LRCLIB throttles bursts: one more try after a short pause, then rest a minute.
     if (res.status === 429) {
-      await new Promise((r) => setTimeout(r, 1500));
+      await pause();
       res = await get();
     }
     if (res.status === 429) this.restingUntil = Date.now() + 60_000;
