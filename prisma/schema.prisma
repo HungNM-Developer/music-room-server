@@ -68,6 +68,8 @@ model Member {
   userId         String?
   /// Đợt 3: the Slack user acting as this member from a linked channel
   slackUserId    String?
+  /// The Slack profile picture of slackUserId (refreshed when they act from Slack)
+  avatarUrl      String?
   user           User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   canPlay        Boolean     @default(false)
   canControl     Boolean     @default(false)
