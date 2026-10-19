@@ -155,7 +155,8 @@ export class DjFinder {
         );
       for (const s of fits)
         yield { externalId: s.externalId, title: s.title, artist: s.artist };
-      for (const v of await this.videos(memberId, asked))
+      // A song asked for by name may be long (a mix, a live set): the room's own limit decides.
+      for (const v of await this.videos(memberId, asked, Infinity))
         if (
           named(v.title, song) &&
           !notTheSong(v.title, asked) &&
@@ -318,11 +319,15 @@ export class DjFinder {
     }
   }
 
-  /** YouTube videos (InnerTube first, Data API when it rests). */
-  private async videos(memberId: string, q: string): Promise<TrackSummary[]> {
+  /** YouTube videos (InnerTube first, Data API when it rests), at most `maxSec` long. */
+  private async videos(
+    memberId: string,
+    q: string,
+    maxSec = MAX_SEC,
+  ): Promise<TrackSummary[]> {
     try {
       return (await this.search.search(memberId, q)).results.filter(
-        (t) => (t.durationSec ?? 0) <= MAX_SEC,
+        (t) => (t.durationSec ?? 0) <= maxSec,
       );
     } catch (e) {
       this.logger.warn(`DJ video search "${q}" failed: ${String(e)}`);

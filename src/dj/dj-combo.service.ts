@@ -224,6 +224,16 @@ export class DjComboService {
       case 'pause':
       case 'resume':
         return this.control(run, s.do);
+      case 'addLink':
+        for (const id of s.videoIds) {
+          const opts = {
+            pin: s.pin,
+            exact: true,
+            query: `https://youtu.be/${id}`,
+          };
+          await this.addSongs(run, [id], 1, opts);
+        }
+        return;
       case 'find':
         return s.suggest
           ? this.suggest(run, s.find, s.count)
@@ -472,6 +482,10 @@ export class DjComboService {
   ): Promise<TrackSummary[] | null> {
     if (target) {
       const { items } = await this.targets(run, target);
+      // "Lưu bài Dấu Mưa": not in the queue → that song from YouTube (only a song named, never
+      // a filter like "bài của Lan").
+      const found = items.length ? [] : await this.lookUpTitles(run, target);
+      if (found.length) return found;
       if (!items.length) {
         run.steps.push({
           action,
@@ -489,6 +503,29 @@ export class DjComboService {
       return null;
     }
     return [np.item.track];
+  }
+
+  /** The songs a target names only by title, found on YouTube (the first fitting upload each). */
+  private async lookUpTitles(
+    run: Run,
+    target: Target,
+  ): Promise<TrackSummary[]> {
+    const { titles, ...rest } = target;
+    const others = Object.entries(rest).filter(
+      ([k, v]) => k !== 'said' && v !== undefined,
+    );
+    if (!titles?.length || others.length) return [];
+    const ids: string[] = [];
+    for (const title of titles)
+      for await (const c of this.finder.candidates(
+        run.me.id,
+        run.actor.roomId,
+        { titles: [title] },
+      )) {
+        ids.push(c.externalId);
+        break;
+      }
+    return ids.length ? (await this.library.lookup(ids)).tracks : [];
   }
 
   /** "Lưu tất cả bài trong hàng chờ": each queue song into the asker's saved songs. */
@@ -725,6 +762,9 @@ export class DjComboService {
     if (run.full) return;
     let added = 0;
     let tries = 0;
+    // Why the last candidate could not go in ("too long for this room"…): told instead of
+    // "not found" when nothing went in.
+    let refused: AppError | null = null;
     for await (const id of ids) {
       if (added >= count || ++tries > count + SPARE_TRIES) break;
       const wish = run.wish;
@@ -746,7 +786,10 @@ export class DjComboService {
           await this.pin(run, queueItemId, step, opts.pin === 'now');
       } catch (e) {
         const next = opts.exact ? TRY_NEXT_EXACT : TRY_NEXT;
-        if (e instanceof AppError && next.includes(e.code)) continue;
+        if (e instanceof AppError && next.includes(e.code)) {
+          if (e.code !== 'TRACK_NOT_FOUND') refused = e;
+          continue;
+        }
         run.steps.push({
           ...failed('add', e),
           ...(opts.query ? { query: opts.query } : {}),
@@ -755,6 +798,13 @@ export class DjComboService {
           run.full = true;
         return;
       }
+    }
+    if (added === 0 && refused) {
+      run.steps.push({
+        ...failed('add', refused),
+        ...(opts.query ? { query: opts.query } : {}),
+      });
+      return;
     }
     if (added < count)
       run.steps.push({

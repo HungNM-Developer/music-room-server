@@ -5,7 +5,14 @@ import {
   normalizeQuery,
 } from '../contracts';
 import { type Plan, planCombo, type Target } from './dj-plan';
-import { howTopic, isHowQuestion, matchQuick, matchRules } from './dj-rules';
+import {
+  howTopic,
+  isHowQuestion,
+  linksIn,
+  matchQuick,
+  matchRules,
+  plain,
+} from './dj-rules';
 import {
   parseTranslation,
   TRANSLATE_SYSTEM,
@@ -158,6 +165,38 @@ export function unsafeStep(plan: Plan): DjClarify | null {
   return null;
 }
 
+/**
+ * YouTube links in the request: a step that would search for the link (or its video id) as a
+ * song name adds those very videos instead (the AI keeps the wish, the pin…).
+ */
+export function withLinks(plan: Plan, request: string): Plan {
+  const links = linksIn(request);
+  if (!links.length) return plan;
+  let used = false;
+  const steps = plan.steps.flatMap((s) => {
+    if (
+      s.do !== 'find' ||
+      s.suggest ||
+      !s.find.titles?.some((t) => links.some((id) => t.includes(id)))
+    )
+      return [s];
+    if (used) return [];
+    used = true;
+    // Pinned only when the request says so ("… ngay", "phát luôn", "tiếp theo").
+    const pinned = /(^| )(ngay|luon|tiep theo|ke tiep|sau bai)( |$)/.test(
+      plain(request),
+    );
+    return [
+      {
+        do: 'addLink' as const,
+        videoIds: links,
+        ...(s.pin && pinned ? { pin: s.pin } : {}),
+      },
+    ];
+  });
+  return { ...plan, steps };
+}
+
 /** A plan as the platform takes it: one-button tasks become their button on the room page. */
 function planFor(plan: Plan, platform: Platform): Decision {
   const unsafe = unsafeStep(plan);
@@ -193,7 +232,7 @@ export async function interpret({
       ? { kind: 'guide', guide: howTopic(request)! }
       : { kind: 'other' };
   }
-  return t.kind === 'plan' ? planFor(t.plan, platform) : t;
+  return t.kind === 'plan' ? planFor(withLinks(t.plan, request), platform) : t;
 }
 
 /**
