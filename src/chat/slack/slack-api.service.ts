@@ -6,7 +6,7 @@ export interface SlackProfile {
   /** '' when Slack did not tell us (users.info failed or the user has no name). */
   name: string;
   email: string | null;
-  /** The profile picture (192 px); null when Slack gave none. */
+  /** The profile picture (72 px: avatars are at most 36 px, ×2 for sharp screens); null when Slack gave none. */
   image: string | null;
 }
 
@@ -193,9 +193,9 @@ export class SlackApi {
         '',
       email: u?.profile?.email ?? null,
       image:
-        u?.profile?.image_192 ||
         u?.profile?.image_72 ||
         u?.profile?.image_48 ||
+        u?.profile?.image_192 ||
         null,
     };
     if (r && p.name) this.profiles.set(userId, { at: Date.now(), p });

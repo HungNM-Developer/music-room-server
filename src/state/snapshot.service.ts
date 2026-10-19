@@ -15,6 +15,14 @@ import {
 } from './views';
 import { TtsService } from '../tts/tts.service';
 
+/** A Google account picture at 72 px (avatars are at most 36 px): its URL ends in "=s96-c". */
+export function smallPicture(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return /googleusercontent\.com\//.test(url)
+    ? url.replace(/=s\d+(-c)?$/, '=s72-c')
+    : url;
+}
+
 @Injectable()
 export class SnapshotService {
   constructor(
@@ -97,7 +105,7 @@ export class SnapshotService {
       online: online.has(m.id),
       listening: this.presence.isListening(m.id),
       // The Google account's picture first, else the Slack one.
-      avatarUrl: m.user?.picture ?? m.avatarUrl ?? null,
+      avatarUrl: smallPicture(m.user?.picture) ?? m.avatarUrl ?? null,
       verified: Boolean(m.userId),
       viaSlack: Boolean(m.slackUserId),
     }));

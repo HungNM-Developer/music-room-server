@@ -47,12 +47,13 @@ import { Broadcaster, roomChannel } from './broadcaster.service';
 import { PresenceService } from './presence.service';
 
 /**
- * Commands that do not mark the room as used: the speaker page's automatic reports, and
+ * Commands that do not mark the room as used: the players' automatic reports, and
  * deleting the room (nothing left to mark).
  */
 const AUTOMATIC_COMMANDS: ReadonlySet<string> = new Set([
   'player:report',
   'player:heartbeat',
+  'listen:unplayable',
   'room:delete',
 ]);
 
@@ -738,6 +739,19 @@ export class RealtimeGateway
       this.limit(`listen:${actor.memberId}`, LISTEN_LIMIT);
       if (this.presence.setListening(s.id, input.on))
         await this.state.touch(actor.roomId);
+      return {};
+    });
+  }
+
+  @SubscribeMessage('listen:unplayable')
+  listenUnplayable(
+    @ConnectedSocket() s: AppSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.run('listen:unplayable', s, body, async (input, actor) => {
+      await this.requireMember(actor);
+      this.limit(`listen:${actor.memberId}`, LISTEN_LIMIT);
+      await this.playback.listenerUnplayable(actor, input);
       return {};
     });
   }
