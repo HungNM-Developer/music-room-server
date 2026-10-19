@@ -9,6 +9,7 @@ import {
   type PlaylistView,
 } from '../contracts';
 import { PrismaService, type Tx } from '../prisma/prisma.service';
+import { Broadcaster } from '../realtime/broadcaster.service';
 import { toTrackSummary } from '../state/views';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -30,7 +31,15 @@ function playlistKind(source: string | null): PlaylistKind | null {
 
 @Injectable()
 export class PlaylistsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly broadcaster: Broadcaster,
+  ) {}
+
+  /** Every tab of the account refreshes its lists (DJ saves, other devices, this tab). */
+  private changed(userId: string, playlistId: string | null): void {
+    this.broadcaster.toUser(userId, 'playlist:changed', { playlistId });
+  }
 
   private async owned(db: Tx | PrismaService, userId: string, id: string) {
     const p = await db.playlist.findUnique({ where: { id } });
@@ -91,7 +100,7 @@ export class PlaylistsService {
     name: string,
     trackIds: string[] = [],
   ): Promise<string> {
-    return this.prisma.$transaction(async (tx) => {
+    const id = await this.prisma.$transaction(async (tx) => {
       const count = await tx.playlist.count({ where: { ownerId: userId } });
       if (count >= MAX_PLAYLISTS)
         throw new AppError('PLAYLIST_LIMIT', { max: MAX_PLAYLISTS });
@@ -110,6 +119,8 @@ export class PlaylistsService {
       });
       return p.id;
     });
+    this.changed(userId, id);
+    return id;
   }
 
   async update(
@@ -127,11 +138,13 @@ export class PlaylistsService {
           : {}),
       },
     });
+    this.changed(userId, id);
   }
 
   async remove(userId: string, id: string): Promise<void> {
     await this.owned(this.prisma, userId, id);
     await this.prisma.playlist.delete({ where: { id } });
+    this.changed(userId, id);
   }
 
   /** Adds a song at the end, or takes it out (positions stay gap-free). */
@@ -169,6 +182,7 @@ export class PlaylistsService {
         data: { updatedAt: new Date() },
       });
     });
+    this.changed(userId, id);
   }
 
   /** Moves a song to index `to` (clamped), shifting the songs in between. */
@@ -201,6 +215,7 @@ export class PlaylistsService {
         data: { updatedAt: new Date() },
       });
     });
+    this.changed(userId, id);
   }
 
   /** By id (owner only) or by share code (anyone). */
@@ -247,6 +262,7 @@ export class PlaylistsService {
           where: { id },
           data: { shareCode },
         });
+        this.changed(userId, id);
         return shareCode;
       } catch (e) {
         if (!enabled || attempt === 4) throw e; // a code collision: try another one
@@ -300,6 +316,7 @@ export class PlaylistsService {
         data: { name, updatedAt: new Date() },
       });
     });
+    this.changed(userId, existing.id);
     return existing.id;
   }
 }
