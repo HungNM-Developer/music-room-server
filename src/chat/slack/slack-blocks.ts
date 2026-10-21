@@ -193,7 +193,9 @@ const DJ_HELP = 'Gõ `/music help` để xem mọi lệnh.';
  * channel (user's choice, 2026-10-21): everyone sees what was asked and what the DJ did.
  */
 export function djSlackOut(r: DjReply, roomUrl: string | null): SlackOut {
-  const text = djText(r);
+  // Escaped: the text carries the AI's words and what people typed (song names, the
+  // request), and it goes to the whole channel — "<!channel>" or "<url|…>" must stay text.
+  const text = esc(djText(r));
   if (r.kind === 'added' || r.kind === 'done')
     return { visibility: 'public', text };
   if (r.kind === 'guide') {
@@ -201,7 +203,7 @@ export function djSlackOut(r: DjReply, roomUrl: string | null): SlackOut {
       r.guide === 'skip'
         ? '`/music skip`'
         : r.guide === 'add'
-          ? `\`/music add ${r.query ?? '<tên bài>'}\``
+          ? `\`/music add ${r.query ? esc(r.query) : '&lt;tên bài&gt;'}\``
           : r.guide === 'myItem'
             ? '`/music queue`'
             : null;
