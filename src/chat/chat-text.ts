@@ -75,7 +75,7 @@ export const CHAT = {
     '• `/music add <tên bài hoặc link YouTube>` — thêm bài vào hàng chờ',
     '• `/music skip` — bỏ phiếu qua bài',
     '• `/music queue` — 5 bài tiếp theo',
-    '• `@Music Room <câu bất kỳ>` hoặc `/music <câu bất kỳ>` — hỏi DJ: "bài mới của Đen Vâu", "vài bài chill", "còn bao lâu tới bài của tôi". Câu bạn gửi DJ được chuyển cho AI miễn phí.',
+    '• `@Music Room <câu bất kỳ>` hoặc `/music <câu bất kỳ>` — hỏi DJ: "bài mới của Đen Vâu", "vài bài chill", "còn bao lâu tới bài của tôi". DJ trả lời công khai trong kênh (với `/music` có kèm câu bạn hỏi). Câu bạn gửi DJ được chuyển cho AI miễn phí.',
     '• Lệnh chỉ chạy khi gõ ngắn đúng dạng: `skip`, `now`, `queue`, `help`, `here`, `add <tên bài ngắn | link>`; câu dài hơn sẽ do DJ hiểu.',
     '• Trang *Home* của bot (mục Apps → Music Room): xem bài đang phát, ➕ Thêm bài, 🎧 Hỏi DJ, bỏ phiếu ngay tại đó',
     '• `@Music Room here` trong một thread — thẻ bỏ phiếu đăng vào thread đó; `/music here` ở kênh — đưa về kênh',

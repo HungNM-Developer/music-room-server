@@ -8,6 +8,7 @@ import { CHAT, chatError } from '../chat-text';
 import { SlackApi } from './slack-api.service';
 import {
   djSlackOut,
+  esc,
   nowMessage,
   queueMessage,
   searchMessage,
@@ -42,6 +43,26 @@ export interface SlackAnswer {
 const ephemeral = (text: string, blocks?: unknown[]): SlackAnswer => ({
   now: { visibility: 'ephemeral', text, ...(blocks ? { blocks } : {}) },
 });
+/**
+ * "/music <câu>" is seen by the asker only: the DJ's answer to the channel says who asked
+ * what. (A mention's answer sits in the thread under the question.)
+ */
+function withQuestion(out: SlackOut, userId: string, q: string): SlackOut {
+  const head = `<@${userId}> hỏi DJ: “${esc(q)}”`;
+  return {
+    ...out,
+    text: `${head}\n${out.text}`,
+    ...(out.blocks
+      ? {
+          blocks: [
+            { type: 'context', elements: [{ type: 'mrkdwn', text: head }] },
+            ...out.blocks,
+          ],
+        }
+      : {}),
+  };
+}
+
 const pub = (text: string, blocks?: unknown[]): SlackAnswer => ({
   now: { visibility: 'public', text, ...(blocks ? { blocks } : {}) },
 });
@@ -124,7 +145,10 @@ export class SlackCommands {
               platform: 'slack',
             });
             const view = await this.chat.now(roomId);
-            return djSlackOut(reply, view?.roomUrl ?? null);
+            const out = djSlackOut(reply, view?.roomUrl ?? null);
+            return ctx.mention
+              ? out
+              : withQuestion(out, ctx.userId, text.trim());
           })
           .catch(
             (e: unknown): SlackOut => ({

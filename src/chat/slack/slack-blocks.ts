@@ -188,10 +188,12 @@ export function queueMessage(v: NowView): string {
 
 const DJ_HELP = 'Gõ `/music help` để xem mọi lệnh.';
 
-/** "@Music Room <câu>": the DJ's answer for Slack (spec 2026-10-18-dj-chat). */
+/**
+ * "@Music Room <câu>": the DJ's answer for Slack (spec 2026-10-18-dj-chat). Always for the
+ * channel (user's choice, 2026-10-21): everyone sees what was asked and what the DJ did.
+ */
 export function djSlackOut(r: DjReply, roomUrl: string | null): SlackOut {
   const text = djText(r);
-  // Songs added or the room changed: the channel sees it, like the room chat.
   if (r.kind === 'added' || r.kind === 'done')
     return { visibility: 'public', text };
   if (r.kind === 'guide') {
@@ -208,7 +210,7 @@ export function djSlackOut(r: DjReply, roomUrl: string | null): SlackOut {
       cmd ? `Trên Slack: gõ ${cmd}.` : 'Việc này làm trên trang phòng.',
       DJ_HELP,
     ];
-    const out: SlackOut = { visibility: 'ephemeral', text: lines.join('\n') };
+    const out: SlackOut = { visibility: 'public', text: lines.join('\n') };
     if (!cmd && roomUrl)
       out.blocks = [
         { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } },
@@ -228,10 +230,10 @@ export function djSlackOut(r: DjReply, roomUrl: string | null): SlackOut {
   }
   if (r.kind === 'info' && r.info?.kind === 'myNext')
     return {
-      visibility: 'ephemeral',
+      visibility: 'public',
       text: `${text}\nGõ \`/music queue\` để xem hàng chờ.`,
     };
   if (r.kind === 'other' || r.kind === 'hello')
-    return { visibility: 'ephemeral', text: `${text}\n${DJ_HELP}` };
-  return { visibility: 'ephemeral', text };
+    return { visibility: 'public', text: `${text}\n${DJ_HELP}` };
+  return { visibility: 'public', text };
 }
