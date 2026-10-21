@@ -18,6 +18,21 @@ const MAX_WAITING = 20;
 /** Over capacity: the line is simply read with the browser voice (not remembered as a failure). */
 class Busy extends Error {}
 
+/** For GET /api/health: whether Edge voices work here, and how the last lines went. */
+export interface TtsStatus {
+  /** disabled: TTS_ENABLED=false; checking: boot check running; off: cannot run here. */
+  state: 'disabled' | 'checking' | 'off' | 'ready';
+  /** Why it is off (Python too old, package missing). */
+  reason?: string;
+  /** Lines made / failed since the server started. */
+  ok: number;
+  failed: number;
+  lastOkAt: string | null;
+  /** edge-tts's own last error line (never the text being read). */
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
 const LANG_SYSTEM =
   'You detect the language of a short message that will be read aloud. ' +
   'Reply with JSON only: {"lang":"vi"} for Vietnamese (also when written without accents), ' +
@@ -42,6 +57,15 @@ export class TtsService implements OnModuleInit {
   private readonly failedAt = new Map<string, number>();
   private active = 0;
   private readonly waiting: (() => void)[] = [];
+  private checked = false;
+  private offReason: string | null = null;
+  private readonly stats = {
+    ok: 0,
+    failed: 0,
+    lastOkAt: null as number | null,
+    lastError: null as string | null,
+    lastErrorAt: null as number | null,
+  };
 
   constructor(
     private readonly ai: AiService,
@@ -53,6 +77,8 @@ export class TtsService implements OnModuleInit {
   onModuleInit(): void {
     if (this.env.TTS_ENABLED === 'false') return;
     this.usable = this.provider.check().then((why) => {
+      this.checked = true;
+      this.offReason = why;
       if (why)
         this.logger.warn(
           `Edge TTS off: ${why}. Run \`npm run tts:install\` with TTS_PYTHON set to Python 3.10+; the speaker uses the browser voice meanwhile.`,
@@ -116,6 +142,27 @@ export class TtsService implements OnModuleInit {
     return this.audio.get(key);
   }
 
+  status(): TtsStatus {
+    const iso = (ms: number | null) => (ms ? new Date(ms).toISOString() : null);
+    const state: TtsStatus['state'] =
+      this.env.TTS_ENABLED === 'false'
+        ? 'disabled'
+        : !this.checked
+          ? 'checking'
+          : this.offReason
+            ? 'off'
+            : 'ready';
+    return {
+      state,
+      ...(state === 'off' && this.offReason ? { reason: this.offReason } : {}),
+      ok: this.stats.ok,
+      failed: this.stats.failed,
+      lastOkAt: iso(this.stats.lastOkAt),
+      lastError: this.stats.lastError,
+      lastErrorAt: iso(this.stats.lastErrorAt),
+    };
+  }
+
   private async make(text: string, voice: Voice): Promise<string | null> {
     if (!(await this.usable)) return null;
     const lang = await this.langOf(text);
@@ -125,12 +172,19 @@ export class TtsService implements OnModuleInit {
     await this.slot();
     try {
       const mp3 = await this.provider.synthesize(text, voiceName);
+      this.stats.ok += 1;
+      this.stats.lastOkAt = Date.now();
       this.audio.set(key, mp3);
       while (this.audio.size > AUDIO_MAX)
         this.audio.delete(this.audio.keys().next().value as string);
       return key;
     } catch (e) {
       this.logger.warn(`Edge TTS (${voiceName}) failed: ${String(e)}`);
+      this.stats.failed += 1;
+      this.stats.lastErrorAt = Date.now();
+      // The provider's message is edge-tts's last stderr line, never the text being read.
+      this.stats.lastError =
+        `${voiceName}: ${String(e).replace(/^Error: /, '')}`.slice(0, 300);
       return null;
     } finally {
       this.release();

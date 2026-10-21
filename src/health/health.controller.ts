@@ -4,6 +4,7 @@ import { ENV, type Env } from '../config/env';
 import { CONTRACTS_VERSION } from '../contracts';
 import { YouTubeProvider } from '../music/youtube.provider';
 import { PrismaService } from '../prisma/prisma.service';
+import { TtsService } from '../tts/tts.service';
 
 /** R-45: 200 when the database answers, 503 otherwise. */
 @Controller('health')
@@ -11,6 +12,7 @@ export class HealthController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly youtube: YouTubeProvider,
+    private readonly tts: TtsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -31,6 +33,8 @@ export class HealthController {
         searchEnabled: this.youtube.searchEnabled,
         // L1: public OAuth client id, so the web app needs no separate setting.
         googleClientId: this.env.GOOGLE_CLIENT_ID ?? null,
+        // Edge voices for wishes / MC lines: ready or why not, and how recent lines went.
+        tts: this.tts.status(),
       });
   }
 }
