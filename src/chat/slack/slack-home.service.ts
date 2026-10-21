@@ -15,7 +15,7 @@ import {
 } from '../chat-room.service';
 import { CHAT, chatError } from '../chat-text';
 import { SlackApi } from './slack-api.service';
-import { djSlackOut } from './slack-blocks';
+import { djSlackOut, esc } from './slack-blocks';
 import {
   ADD_CALLBACK,
   addModal,
@@ -380,7 +380,7 @@ export class SlackHomeService implements OnModuleInit, OnModuleDestroy {
       if (reply.kind === 'added' || reply.kind === 'done')
         void this.notify(teamId, userId, `🎧 ${out.text}`, s.roomId);
       return out.text;
-    })().catch((e: unknown) => `⚠️ ${chatError(e)}`);
+    })().catch((e: unknown) => `⚠️ ${esc(chatError(e))}`);
 
     const quick = await Promise.race([
       work,

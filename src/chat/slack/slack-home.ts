@@ -344,9 +344,8 @@ export function djModal(s: DjState): View {
   if (s.asked)
     blocks.push(
       section(`*Bạn:* ${esc(s.asked)}`),
-      section(
-        `🎧 *DJ:* ${s.answer === null ? '⏳ Đang nghĩ…' : esc(s.answer)}`,
-      ),
+      // The answer is already Slack-safe (djSlackOut escapes it).
+      section(`🎧 *DJ:* ${s.answer ?? '⏳ Đang nghĩ…'}`),
       divider,
     );
   blocks.push(
